@@ -7,3 +7,4 @@ Cloudflare Workers + PartyServer sample for live conference polling with three v
 - `Projector`: display live aggregated results
 
 Questions are defined in `src/data/questions.json`, while correct answers remain server-only until reveal.
+
