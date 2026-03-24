@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import usePartySocket from "partysocket/react";
-import { Check, CheckCheck, Copy, Eye, Link2, LockKeyhole, Trophy, Users } from "lucide-react";
-import { useParams, useSearch } from "@tanstack/react-router";
+import {
+  CheckCircle2,
+  CheckCheck,
+  Copy,
+  Eye,
+  Lock,
+  Link2,
+  LockKeyhole,
+  MoreVertical,
+  Maximize2,
+  Rocket,
+  Settings,
+  Users,
+} from "lucide-react";
 import type {
   IncomingMessage,
   OutgoingMessage,
@@ -241,11 +253,13 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
   }
 
   return (
-    <main className={`app app-${view}`}>
+    <main className={`app app-${view} app-shell`}>
       {needsAudienceName ? (
         <div className="name-overlay">
           <form className="name-modal" onSubmit={submitAudienceName}>
-            <h2>What should we call you?</h2>
+            <span className="name-modal-kicker">Identity check</span>
+            <h2>Ready to sync?</h2>
+            <p className="muted">Enter your display name to join room {room}.</p>
             <input
               className="text-input"
               value={pendingAudienceName}
@@ -253,37 +267,26 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
               placeholder="Anon from somewhere"
               autoFocus
             />
-            <button type="submit">Join</button>
+            <button type="submit">Join Session</button>
           </form>
         </div>
       ) : null}
 
-      <header className="panel header-panel">
-        <div className="header-top">
-          <h1>Syntax Live Polls</h1>
-          {stateMessage ? (
-            <div className="header-live-stats">
-              <span className="live-chip" title="Connected">
-                <Users size={14} strokeWidth={2} aria-hidden />
-                <strong>{stateMessage.participants}</strong>
-              </span>
-              <span className="live-chip" title="Answered">
-                <Check size={14} strokeWidth={2} aria-hidden />
-                <strong>{stateMessage.totalResponses}</strong>
-              </span>
-              {view === "audience" && stateMessage.score ? (
-                <span className="live-chip" title="Score">
-                  <Trophy size={14} strokeWidth={2} aria-hidden />
-                  <strong>
-                    {stateMessage.score.correct}/{stateMessage.score.answered}
-                  </strong>
+      {stateMessage || errorMessage ? (
+        <header className={`header-panel header-panel-compact ${view === "projector" ? "header-panel-projector" : ""}`}>
+          <div className="header-top header-top-compact">
+            {stateMessage ? (
+              <div className="header-live-stats header-live-stats-design">
+                <span className="live-chip live-chip-connected live-chip-compact" title="Participants">
+                  <Users size={13} strokeWidth={2} aria-hidden />
+                  <strong>{stateMessage.participants}</strong>
                 </span>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-        {errorMessage ? <p className="error">{errorMessage}</p> : null}
-      </header>
+              </div>
+            ) : null}
+          </div>
+          {errorMessage ? <p className="error header-error">{errorMessage}</p> : null}
+        </header>
+      ) : null}
 
       {!stateMessage ? (
         <section className="panel">
@@ -315,15 +318,19 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
       ) : null}
 
       {stateMessage && view === "projector" ? (
-        <ProjectorView stateMessage={stateMessage} />
+        <ProjectorView stateMessage={stateMessage} room={room} />
       ) : null}
 
-      {showDebug ? (
-        <footer className="debug-footer">
-          Room {room} | Role {view} | {status} | Phase{" "}
-          {phaseLabel[stateMessage?.phase ?? "idle"] ?? "Unknown"}
-        </footer>
-      ) : null}
+      <footer className="app-bottom-bar">
+        <span className="app-bottom-left">SynHole</span>
+        <div className="app-bottom-right">
+          <span>Room: {room}</span>
+          <span>Role: {view}</span>
+          <span className="app-bottom-status">Status: {status}</span>
+          <span>Phase: {phaseLabel[stateMessage?.phase ?? "idle"] ?? "unknown"}</span>
+          {showDebug ? <span>debug</span> : null}
+        </div>
+      </footer>
     </main>
   );
 }
@@ -349,7 +356,7 @@ function AudienceView(props: {
   const question = stateMessage.question;
   if (!question) {
     return (
-      <section className="panel">
+      <section className="panel audience-panel">
         <h2>Audience</h2>
         <p className="muted">Host has not selected a question yet.</p>
       </section>
@@ -357,59 +364,90 @@ function AudienceView(props: {
   }
 
   const votingOpen = stateMessage.phase === "open";
+  const revealChoice = stateMessage.reveal?.kind === "choice" ? stateMessage.reveal : null;
 
   if (question.kind === "number") {
     return (
-      <section className="panel">
-        <h2>{question.prompt}</h2>
-        <div className="number-guess-row">
-          <input
-            type="number"
-            className="text-input"
-            min={question.min}
-            max={question.max}
-            step={question.step ?? 1}
-            value={numberGuessInput}
-            onChange={(event) => onNumberGuessInputChange(event.currentTarget.value)}
-            placeholder="Enter your guess"
-            disabled={!votingOpen}
-          />
-          <button type="button" onClick={onSubmitNumberGuess} disabled={!votingOpen}>
-            Save guess
-          </button>
+      <section className="audience-layout">
+        <div className="audience-left">
+          <div className="audience-meta-row">
+            <span className="question-pill">
+              Question {stateMessage.currentQuestionIndex + 1}/{stateMessage.totalQuestions}
+            </span>
+            <span className={`audience-live-dot ${votingOpen ? "is-live" : ""}`}>
+              {votingOpen ? "Live" : "Waiting"}
+            </span>
+            <span className="audience-answered-pill">
+              {stateMessage.totalResponses} answered
+            </span>
+          </div>
+          <h2 className="audience-hero">{question.prompt}</h2>
         </div>
-        {numberGuessError ? <p className="error">{numberGuessError}</p> : null}
-        <NumberResults
-          question={question}
-          reveal={stateMessage.reveal}
-          totalResponses={stateMessage.totalResponses}
-          showResults={stateMessage.resultsVisible}
-          yourNumberGuess={stateMessage.yourNumberGuess}
-        />
+
+        <div className="audience-right">
+          <div className="panel audience-number-card">
+            <div className="number-guess-row">
+              <input
+                type="number"
+                className="text-input"
+                min={question.min}
+                max={question.max}
+                step={question.step ?? 1}
+                value={numberGuessInput}
+                onChange={(event) => onNumberGuessInputChange(event.currentTarget.value)}
+                placeholder="Enter your guess"
+                disabled={!votingOpen}
+              />
+              <button type="button" onClick={onSubmitNumberGuess} disabled={!votingOpen}>
+                Save guess
+              </button>
+            </div>
+            {numberGuessError ? <p className="error">{numberGuessError}</p> : null}
+            <NumberResults
+              question={question}
+              reveal={stateMessage.reveal}
+              totalResponses={stateMessage.totalResponses}
+              showResults={stateMessage.resultsVisible}
+              yourNumberGuess={stateMessage.yourNumberGuess}
+            />
+          </div>
+        </div>
       </section>
     );
   }
 
   return (
-    <section className="panel">
-      <h2>{question.prompt}</h2>
-      <ResultsList
-        question={question}
-        voteCounts={stateMessage.voteCounts}
-        totalResponses={stateMessage.totalResponses}
-        revealCorrectOptionIds={
-          stateMessage.reveal?.kind === "choice" ? stateMessage.reveal.correctOptionIds : []
-        }
-        showResults={stateMessage.resultsVisible}
-        showOptionsWhenHidden
-        selectable
-        selectedOptionIds={selectedOptionIds}
-        inputType={question.allowMultiple ? "checkbox" : "radio"}
-        selectionName="audience-option"
-        canInteract={votingOpen}
-        onToggleOption={onToggleOption}
-        showAudienceFeedback
-      />
+    <section className="audience-layout">
+      <div className="audience-left">
+        <div className="audience-meta-row">
+          <span className="question-pill">
+            Question {stateMessage.currentQuestionIndex + 1}/{stateMessage.totalQuestions}
+          </span>
+          <span className={`audience-live-dot ${votingOpen ? "is-live" : ""}`}>
+            {votingOpen ? "Live" : "Closed"}
+          </span>
+          <span className="audience-answered-pill">
+            {stateMessage.totalResponses} answered
+          </span>
+        </div>
+        <h2 className="audience-hero">{renderAudiencePrompt(question.prompt)}</h2>
+      </div>
+
+      <div className="audience-right">
+        <AudienceChoiceOptions
+          question={question}
+          voteCounts={stateMessage.voteCounts}
+          totalResponses={stateMessage.totalResponses}
+          selectedOptionIds={selectedOptionIds}
+          revealCorrectOptionIds={revealChoice?.correctOptionIds ?? []}
+          showResults={stateMessage.resultsVisible}
+          canInteract={votingOpen}
+          onToggleOption={onToggleOption}
+        />
+        <div className="audience-total-card">
+          {stateMessage.totalResponses} total answers submitted
+        </div>
+      </div>
     </section>
   );
 }
@@ -434,9 +472,12 @@ function HostView(props: {
   const question = stateMessage.question;
   const hasNextQuestion = stateMessage.currentQuestionIndex < stateMessage.totalQuestions - 1;
   const smartNextAction = getSmartNextAction(stateMessage.phase, hasNextQuestion);
+  const smartNextLabel = getSmartNextLabel(smartNextAction);
+  const smartNextDescription = getSmartNextDescription(smartNextAction);
   const [copiedLink, setCopiedLink] = useState<"audience" | "projector" | "host" | null>(
     null
   );
+  const [showManual, setShowManual] = useState(false);
 
   function runSmartNext() {
     switch (smartNextAction) {
@@ -473,224 +514,461 @@ function HostView(props: {
   }
 
   return (
-    <section className="panel">
-      <h2>Host Controls</h2>
+    <section className="host-layout">
+      <div className="host-left-column">
+        <section className="panel host-card">
+          <div className="host-card-heading">
+            <div>
+              <h2>Control Panel</h2>
+              <p className="muted">Manage room visibility and access</p>
+            </div>
+            <span className={`host-lock-chip ${canControl ? "host-lock-open" : "host-lock-closed"}`}>
+              <LockKeyhole size={12} strokeWidth={2} aria-hidden />
+              {canControl ? "Unlocked" : "Locked"}
+            </span>
+          </div>
 
-      <div className="host-key-row">
-        <input
-          className="text-input"
-          value={hostKey}
-          onChange={(event) => onHostKeyChange(event.currentTarget.value)}
-          placeholder="Host key"
-        />
-      </div>
+          <label className="host-input-label">
+            Host Access Key
+            <div className="host-key-row">
+              <input
+                className="text-input"
+                value={hostKey}
+                onChange={(event) => onHostKeyChange(event.currentTarget.value)}
+                placeholder="Host key"
+                type="password"
+              />
+              <span className="host-key-eye" aria-hidden>
+                <Eye size={15} strokeWidth={2} />
+              </span>
+            </div>
+          </label>
 
-      <p className={`host-lock-chip ${canControl ? "host-lock-open" : "host-lock-closed"}`}>
-        <LockKeyhole size={12} strokeWidth={2} aria-hidden />
-        {canControl ? "Unlocked" : "Locked"}
-      </p>
-
-      <div className="host-controls">
-        <label>
-          Current question
-          <select
-            value={stateMessage.currentQuestionIndex}
-            onChange={(event) =>
-              sendMessage({
-                type: "set-question",
-                questionIndex: Number(event.currentTarget.value),
-              })
-            }
-            disabled={!canControl}
-          >
-            {hostQuestions.map((item, index) => (
-              <option key={item.id} value={index}>
-                {index + 1}. {item.prompt}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div className="button-row">
-          <button
-            onClick={runSmartNext}
-            disabled={!canControl || smartNextAction === "none"}
-          >
-            Next: {getSmartNextLabel(smartNextAction)}
-          </button>
-          <button
-            onClick={() => sendMessage({ type: "reset-session" })}
-            disabled={!canControl}
-          >
-            Reset
-          </button>
-        </div>
-
-        <details className="manual-controls">
-          <summary>Manual controls</summary>
           <div className="button-row">
             <button
-              onClick={() => sendMessage({ type: "open-voting" })}
-              disabled={!canControl}
-            >
-              Open
-            </button>
-            <button
+              type="button"
+              className="host-secondary-btn"
               onClick={() => sendMessage({ type: "close-voting" })}
               disabled={!canControl}
             >
-              Close
+              <Lock size={14} strokeWidth={2} aria-hidden />
+              Lock Room
             </button>
             <button
-              onClick={() => sendMessage({ type: "reveal" })}
-              disabled={!canControl}
+              type="button"
+              className="host-primary-btn"
+              onClick={() => setShowManual((current) => !current)}
             >
-              Reveal
+              <Settings size={14} strokeWidth={2} aria-hidden />
+              Settings
             </button>
           </div>
-        </details>
+        </section>
+
+        <section className="panel host-card">
+          <div className="host-card-heading">
+            <div>
+              <h3>Active Question</h3>
+              <p className="muted">Select and launch polling phases</p>
+            </div>
+          </div>
+
+          <label className="host-input-label">
+            Select Question
+            <select
+              value={stateMessage.currentQuestionIndex}
+              onChange={(event) =>
+                sendMessage({
+                  type: "set-question",
+                  questionIndex: Number(event.currentTarget.value),
+                })
+              }
+              disabled={!canControl}
+            >
+              {hostQuestions.map((item, index) => (
+                <option key={item.id} value={index}>
+                  Q{index + 1}: {item.prompt}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="host-next-phase-card">
+            <span>Next Phase</span>
+            <p>{smartNextLabel}</p>
+            <small>{smartNextDescription}</small>
+          </div>
+
+          <button
+            type="button"
+            className="host-launch-btn"
+            onClick={runSmartNext}
+            disabled={!canControl || smartNextAction === "none"}
+          >
+            Next: {smartNextLabel}
+            <Rocket size={15} strokeWidth={2} aria-hidden />
+          </button>
+
+          {showManual ? (
+            <div className="host-manual-row">
+              <button onClick={() => sendMessage({ type: "open-voting" })} disabled={!canControl}>
+                Open
+              </button>
+              <button onClick={() => sendMessage({ type: "close-voting" })} disabled={!canControl}>
+                Close
+              </button>
+              <button onClick={() => sendMessage({ type: "reveal" })} disabled={!canControl}>
+                Reveal
+              </button>
+              <button onClick={() => sendMessage({ type: "reset-session" })} disabled={!canControl}>
+                Reset
+              </button>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="panel nested-panel share-links-panel">
+          <h3>Share Links</h3>
+          <div className="link-rows">
+            <div className="link-row">
+              <span className="link-row-label">
+                <Link2 size={14} strokeWidth={2} aria-hidden />
+                Audience
+              </span>
+              <div className="link-row-actions">
+                <a href={roomLinks.audience} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+                <button
+                  className="copy-link-btn"
+                  onClick={() => copyShareLink("audience", roomLinks.audience)}
+                  type="button"
+                >
+                  {copiedLink === "audience" ? (
+                    <CheckCheck size={14} strokeWidth={2} aria-hidden />
+                  ) : (
+                    <Copy size={14} strokeWidth={2} aria-hidden />
+                  )}
+                </button>
+              </div>
+            </div>
+            <div className="link-row">
+              <span className="link-row-label">
+                <Link2 size={14} strokeWidth={2} aria-hidden />
+                Projector
+              </span>
+              <div className="link-row-actions">
+                <a href={roomLinks.projector} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+                <button
+                  className="copy-link-btn"
+                  onClick={() => copyShareLink("projector", roomLinks.projector)}
+                  type="button"
+                >
+                  {copiedLink === "projector" ? (
+                    <CheckCheck size={14} strokeWidth={2} aria-hidden />
+                  ) : (
+                    <Copy size={14} strokeWidth={2} aria-hidden />
+                  )}
+                </button>
+              </div>
+            </div>
+            <div className="link-row">
+              <span className="link-row-label">
+                <Link2 size={14} strokeWidth={2} aria-hidden />
+                Host
+              </span>
+              <div className="link-row-actions">
+                <a href={roomLinks.host} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+                <button
+                  className="copy-link-btn"
+                  onClick={() => copyShareLink("host", roomLinks.host)}
+                  type="button"
+                >
+                  {copiedLink === "host" ? (
+                    <CheckCheck size={14} strokeWidth={2} aria-hidden />
+                  ) : (
+                    <Copy size={14} strokeWidth={2} aria-hidden />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
-      {question ? (
-        question.kind === "number" ? (
-          <NumberResults
-            question={question}
-            reveal={stateMessage.reveal}
-            totalResponses={stateMessage.totalResponses}
-            showResults={stateMessage.resultsVisible}
-            yourNumberGuess={null}
-          />
-        ) : (
-          <ResultsList
-            question={question}
-            voteCounts={stateMessage.voteCounts}
-            totalResponses={stateMessage.totalResponses}
-            revealCorrectOptionIds={
-              stateMessage.reveal?.kind === "choice" ? stateMessage.reveal.correctOptionIds : []
-            }
-            showResults={stateMessage.resultsVisible}
-          />
-        )
-      ) : null}
-
-      <section className="panel nested-panel">
-        <h3>Share Links</h3>
-        <div className="link-rows">
-          <div className="link-row">
-            <span className="link-row-label">
-              <Link2 size={14} strokeWidth={2} aria-hidden />
-              Audience
-            </span>
-            <div className="link-row-actions">
-              <a href={roomLinks.audience} target="_blank" rel="noreferrer">
-                Open
-              </a>
-              <button
-                className="copy-link-btn"
-                onClick={() => copyShareLink("audience", roomLinks.audience)}
-                type="button"
-              >
-                {copiedLink === "audience" ? (
-                  <CheckCheck size={14} strokeWidth={2} aria-hidden />
-                ) : (
-                  <Copy size={14} strokeWidth={2} aria-hidden />
-                )}
-              </button>
-            </div>
-          </div>
-          <div className="link-row">
-            <span className="link-row-label">
-              <Link2 size={14} strokeWidth={2} aria-hidden />
-              Projector
-            </span>
-            <div className="link-row-actions">
-              <a href={roomLinks.projector} target="_blank" rel="noreferrer">
-                Open
-              </a>
-              <button
-                className="copy-link-btn"
-                onClick={() => copyShareLink("projector", roomLinks.projector)}
-                type="button"
-              >
-                {copiedLink === "projector" ? (
-                  <CheckCheck size={14} strokeWidth={2} aria-hidden />
-                ) : (
-                  <Copy size={14} strokeWidth={2} aria-hidden />
-                )}
-              </button>
-            </div>
-          </div>
-          <div className="link-row">
-            <span className="link-row-label">
-              <Link2 size={14} strokeWidth={2} aria-hidden />
-              Host
-            </span>
-            <div className="link-row-actions">
-              <a href={roomLinks.host} target="_blank" rel="noreferrer">
-                Open
-              </a>
-              <button
-                className="copy-link-btn"
-                onClick={() => copyShareLink("host", roomLinks.host)}
-                type="button"
-              >
-                {copiedLink === "host" ? (
-                  <CheckCheck size={14} strokeWidth={2} aria-hidden />
-                ) : (
-                  <Copy size={14} strokeWidth={2} aria-hidden />
-                )}
-              </button>
-            </div>
+      <div className="host-preview-card">
+        <div className="host-preview-top">
+          <span>Live Results Preview</span>
+          <div className="host-preview-actions" aria-hidden>
+            <Maximize2 size={14} strokeWidth={2} />
+            <MoreVertical size={14} strokeWidth={2} />
           </div>
         </div>
-      </section>
+
+        <span className="host-preview-question-count">
+          Question {stateMessage.currentQuestionIndex + 1} of {stateMessage.totalQuestions}
+        </span>
+        <h3>{question ? question.prompt : "Waiting for question"}</h3>
+
+        {question ? (
+          question.kind === "number" ? (
+            <NumberResults
+              question={question}
+              reveal={stateMessage.reveal}
+              totalResponses={stateMessage.totalResponses}
+              showResults={stateMessage.resultsVisible}
+              yourNumberGuess={null}
+            />
+          ) : (
+            <HostPreviewChoiceResults
+              question={question}
+              voteCounts={stateMessage.voteCounts}
+              totalResponses={stateMessage.totalResponses}
+              showResults={stateMessage.resultsVisible}
+            />
+          )
+        ) : null}
+
+        <div className="host-preview-bottom">
+          <div className="host-preview-stat">
+            <small>Confidence</small>
+            <strong>{getConfidenceLabel(stateMessage.totalResponses, stateMessage.participants)}</strong>
+          </div>
+          <div className="host-preview-stat">
+            <small>Active users</small>
+            <strong>
+              {stateMessage.totalResponses}/{Math.max(1, stateMessage.participants)}
+            </strong>
+          </div>
+          <span className="host-preview-phase">
+            Phase: {phaseLabel[stateMessage.phase] ?? stateMessage.phase}
+          </span>
+        </div>
+      </div>
     </section>
   );
 }
 
 function ProjectorView(props: {
   stateMessage: Extract<OutgoingMessage, { type: "state" }>;
+  room: string;
 }) {
-  const { stateMessage } = props;
+  const { stateMessage, room } = props;
   const question = stateMessage.question;
 
   if (!question) {
     return (
-      <section className="panel projector">
+      <section className="projector-shell">
         <h2>Projector</h2>
         <p className="muted">Waiting for host to select a question.</p>
       </section>
     );
   }
 
+  const audienceUrl =
+    typeof window === "undefined"
+      ? `/r/${encodeURIComponent(room)}`
+      : new URL(`/r/${encodeURIComponent(room)}`, window.location.origin).toString();
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(audienceUrl)}`;
+  const shortLink =
+    typeof window === "undefined"
+      ? audienceUrl
+      : `${window.location.host}${new URL(audienceUrl).pathname}`;
+
   return (
-    <section className="panel projector">
-      <h2>{question.prompt}</h2>
-      <p className="muted big">
-        {stateMessage.totalResponses} response
-        {stateMessage.totalResponses === 1 ? "" : "s"}
-      </p>
-      {question.kind === "number" ? (
-        <NumberResults
-          question={question}
-          reveal={stateMessage.reveal}
-          totalResponses={stateMessage.totalResponses}
-          showResults={stateMessage.resultsVisible}
-          yourNumberGuess={null}
-        />
-      ) : (
-        <ResultsList
-          question={question}
-          voteCounts={stateMessage.voteCounts}
-          totalResponses={stateMessage.totalResponses}
-          revealCorrectOptionIds={
-            stateMessage.reveal?.kind === "choice" ? stateMessage.reveal.correctOptionIds : []
-          }
-          showResults={stateMessage.resultsVisible}
-          showOptionsWhenHidden
-        />
-      )}
+    <section className="projector-shell">
+      <div className="projector-head">
+        <div className="projector-meta-row">
+          <span className="projector-kicker">Current Question</span>
+          <span className="projector-answered-pill">
+            {stateMessage.totalResponses} answered
+          </span>
+        </div>
+        <h2 className="projector-title">{question.prompt}</h2>
+      </div>
+
+      <div className="projector-main-grid">
+        <div className="projector-main-left">
+          {question.kind === "number" ? (
+            <NumberResults
+              question={question}
+              reveal={stateMessage.reveal}
+              totalResponses={stateMessage.totalResponses}
+              showResults={stateMessage.resultsVisible}
+              yourNumberGuess={null}
+            />
+          ) : (
+            <ProjectorChoiceResults
+              question={question}
+              voteCounts={stateMessage.voteCounts}
+              totalResponses={stateMessage.totalResponses}
+              showResults={stateMessage.resultsVisible}
+            />
+          )}
+        </div>
+
+        <aside className="projector-side">
+          <div className="projector-qr-card">
+            <img src={qrUrl} alt="Audience join QR code" className="projector-qr-image" />
+            <p className="projector-qr-label">Join via QR or visit</p>
+            <p className="projector-qr-link">{shortLink}</p>
+          </div>
+        </aside>
+      </div>
     </section>
+  );
+}
+
+function ProjectorChoiceResults(props: {
+  question: PollChoiceQuestionPublic | PollChoiceQuestion;
+  voteCounts: Record<string, number>;
+  totalResponses: number;
+  showResults: boolean;
+}) {
+  const { question, voteCounts, totalResponses, showResults } = props;
+  const denominator = Math.max(1, totalResponses);
+  const maxVotes = Math.max(...question.options.map((option) => voteCounts[option.id] ?? 0), 0);
+
+  return (
+    <div className="projector-choice-results">
+      {question.options.map((option, index) => {
+        const votes = voteCounts[option.id] ?? 0;
+        const percent = showResults ? Math.round((votes / denominator) * 100) : 0;
+        const isLeading = votes > 0 && votes === maxVotes;
+
+        return (
+          <div className="projector-bar-row" key={option.id}>
+            <div className="projector-bar-topline">
+              <span>{option.label}</span>
+              <span>{showResults ? `${percent}%` : "--"}</span>
+            </div>
+            <div className="projector-bar-track">
+              <div
+                className={`projector-bar-fill ${isLeading ? "is-leading" : ""}`}
+                style={{ width: `${percent}%` }}
+              >
+                <span className="projector-bar-icon">{String.fromCharCode(97 + (index % 26))}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AudienceChoiceOptions(props: {
+  question: PollChoiceQuestionPublic | PollChoiceQuestion;
+  voteCounts: Record<string, number>;
+  totalResponses: number;
+  selectedOptionIds: string[];
+  revealCorrectOptionIds: string[];
+  showResults: boolean;
+  canInteract: boolean;
+  onToggleOption: (optionId: string) => void;
+}) {
+  const {
+    question,
+    voteCounts,
+    totalResponses,
+    selectedOptionIds,
+    revealCorrectOptionIds,
+    showResults,
+    canInteract,
+    onToggleOption,
+  } = props;
+  const denominator = Math.max(1, totalResponses);
+
+  return (
+    <div className="audience-choice-list">
+      {question.options.map((option, index) => {
+        const votes = voteCounts[option.id] ?? 0;
+        const percent = Math.round((votes / denominator) * 100);
+        const checked = selectedOptionIds.includes(option.id);
+        const isCorrectOption = revealCorrectOptionIds.includes(option.id);
+        const feedback =
+          revealCorrectOptionIds.length > 0 ? getAudienceOptionFeedback(checked, isCorrectOption) : null;
+        const feedbackLabel = feedback === "missed-correct" ? "Correct" : feedback ? "Your choice" : null;
+        return (
+          <button
+            type="button"
+            key={option.id}
+            className={`audience-option-card ${checked ? "is-selected" : ""} ${
+              feedback ? `feedback-${feedback}` : ""
+            } ${!canInteract ? "is-locked" : ""}`}
+            onClick={() => onToggleOption(option.id)}
+            disabled={!canInteract}
+          >
+            <div className="audience-option-left">
+              <small>Option {String.fromCharCode(65 + (index % 26))}</small>
+              <strong>{option.label}</strong>
+            </div>
+            <div className="audience-option-right">
+              {showResults ? <span>{percent}%</span> : null}
+              {feedback === "selected-correct" || feedback === "missed-correct" ? (
+                <CheckCircle2 size={16} strokeWidth={2.2} aria-hidden />
+              ) : null}
+              {feedbackLabel ? (
+                <span className={`audience-option-badge badge-${feedback}`}>{feedbackLabel}</span>
+              ) : null}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function HostPreviewChoiceResults(props: {
+  question: PollChoiceQuestionPublic | PollChoiceQuestion;
+  voteCounts: Record<string, number>;
+  totalResponses: number;
+  showResults: boolean;
+}) {
+  const { question, voteCounts, totalResponses, showResults } = props;
+  const denominator = Math.max(1, totalResponses);
+  const maxVotes = Math.max(...question.options.map((option) => voteCounts[option.id] ?? 0), 0);
+
+  return (
+    <div className="host-preview-results">
+      {question.options.map((option) => {
+        const votes = voteCounts[option.id] ?? 0;
+        const percent = Math.round((votes / denominator) * 100);
+        const leading = votes > 0 && votes === maxVotes;
+        return (
+          <div className="host-preview-result-row" key={option.id}>
+            <div className="host-preview-result-top">
+              <span>{option.label}</span>
+              <span>{showResults ? `${votes} votes (${percent}%)` : "--"}</span>
+            </div>
+            <div className="host-preview-result-track">
+              <div
+                className={`host-preview-result-fill ${leading ? "is-leading" : ""}`}
+                style={{ width: `${showResults ? percent : 0}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderAudiencePrompt(prompt: string) {
+  const words = prompt.trim().split(/\s+/);
+  if (words.length < 2) {
+    return prompt;
+  }
+  const last = words[words.length - 1];
+  const head = words.slice(0, -1).join(" ");
+  return (
+    <>
+      {head} <span className="audience-prompt-accent">{last}</span>
+    </>
   );
 }
 
@@ -731,7 +1009,7 @@ function ResultsList(props: {
 
   return (
     <div className="results">
-      {question.options.map((option) => {
+      {question.options.map((option, optionIndex) => {
         const votes = voteCounts[option.id] ?? 0;
         const percent = showResults ? Math.round((votes / denominator) * 100) : 0;
         const isCorrect = revealCorrectOptionIds.includes(option.id);
@@ -745,7 +1023,7 @@ function ResultsList(props: {
           <label
             className={`result-row ${isCorrect ? "correct" : ""} ${
               isInteractive ? "result-row-interactive" : ""
-            } ${feedback ? `feedback-${feedback}` : ""}`}
+            } ${feedback ? `feedback-${feedback}` : ""} ${checked ? "row-selected" : ""}`}
             key={option.id}
           >
             {isInteractive ? (
@@ -760,6 +1038,9 @@ function ResultsList(props: {
             <div className="result-content">
               <div className="result-meta">
                 <span className="result-label-wrap">
+                  <span className="option-index">
+                    {String.fromCharCode(65 + (optionIndex % 26))}
+                  </span>
                   <span>{option.label}</span>
                   {feedback ? (
                     <span className={`result-feedback-chip feedback-chip-${feedback}`}>
@@ -902,6 +1183,29 @@ function getSmartNextLabel(action: SmartNextAction): string {
     case "none":
       return "Done";
   }
+}
+
+function getSmartNextDescription(action: SmartNextAction): string {
+  switch (action) {
+    case "open":
+      return "Allow participants to submit responses in real-time.";
+    case "close":
+      return "Pause new submissions and prepare the reveal.";
+    case "reveal":
+      return "Reveal correct answers and live aggregate results.";
+    case "switch":
+      return "Advance to the next question and reopen voting.";
+    case "none":
+      return "Session complete. Reset to run again.";
+  }
+}
+
+function getConfidenceLabel(totalResponses: number, participants: number): string {
+  const denominator = Math.max(1, participants);
+  const ratio = totalResponses / denominator;
+  if (ratio >= 0.7) return "High";
+  if (ratio >= 0.35) return "Medium";
+  return "Low";
 }
 
 function getOrCreateVoterId(): string {
