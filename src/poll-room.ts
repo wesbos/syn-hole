@@ -28,6 +28,64 @@ export class PollRoom extends Server<Env> {
   private stateLoaded = false;
   private loadStatePromise: Promise<void> | null = null;
 
+  async onRequest(request: Request): Promise<Response> {
+    await this.ensureStateLoaded();
+    const url = new URL(request.url);
+
+    if (url.pathname.endsWith("/stats") && request.method === "GET") {
+      const connections = Array.from(this.getConnections<PollConnectionState>());
+      let audienceCount = 0;
+      let hostCount = 0;
+      let projectorCount = 0;
+      for (const conn of connections) {
+        if (conn.state?.role === "audience") audienceCount++;
+        else if (conn.state?.role === "host") hostCount++;
+        else if (conn.state?.role === "projector") projectorCount++;
+      }
+
+      const questionStats: Array<{
+        index: number;
+        id: string;
+        prompt: string;
+        phase: string;
+        totalVotes: number;
+      }> = [];
+      for (let i = 0; i < QUESTIONS.length; i++) {
+        const q = QUESTIONS[i];
+        const votes = this.votesByQuestionIndex.get(i);
+        questionStats.push({
+          index: i,
+          id: q.id,
+          prompt: q.prompt,
+          phase: this.phaseByQuestionIndex.get(i) ?? "idle",
+          totalVotes: votes?.size ?? 0,
+        });
+      }
+
+      return Response.json({
+        room: this.name,
+        currentQuestionIndex: this.currentQuestionIndex,
+        totalQuestions: QUESTIONS.length,
+        participants: this.getConnectedParticipantCount(),
+        audienceCount,
+        hostCount,
+        projectorCount,
+        questions: questionStats,
+      });
+    }
+
+    if (url.pathname.endsWith("/reset") && request.method === "POST") {
+      this.currentQuestionIndex = 0;
+      this.phaseByQuestionIndex.clear();
+      this.votesByQuestionIndex.clear();
+      await this.clearPersistedState();
+      this.broadcastState();
+      return Response.json({ ok: true });
+    }
+
+    return new Response("Not Found", { status: 404 });
+  }
+
   async onConnect(conn: Connection<PollConnectionState>, ctx: ConnectionContext) {
     await this.ensureStateLoaded();
 
@@ -285,7 +343,7 @@ export class PollRoom extends Server<Env> {
                 role === "audience"
                   ? winnerResult?.winningGuess !== null &&
                     yourNumberGuess !== null &&
-                    yourNumberGuess === winnerResult.winningGuess
+                    yourNumberGuess === winnerResult?.winningGuess
                   : undefined,
             }
         : null;

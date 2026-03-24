@@ -1442,6 +1442,378 @@ button:disabled {
   font-weight: 700;
 }
 
+/* ── Admin ── */
+
+.admin-app {
+  max-width: 960px;
+  padding-bottom: 3.6rem;
+}
+
+.admin-login-wrap {
+  display: grid;
+  place-items: center;
+  min-height: 60vh;
+}
+
+.admin-login-card {
+  width: min(420px, calc(100% - 1.5rem));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 8px solid var(--accent);
+  border-radius: 14px;
+  padding: 1.5rem;
+  display: grid;
+  gap: 0.8rem;
+  text-align: center;
+}
+
+.admin-login-card h2 {
+  margin: 0;
+  font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+.admin-login-icon {
+  color: var(--accent-ink);
+  margin-bottom: 0.2rem;
+}
+
+.admin-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0 0.3rem;
+}
+
+.admin-header h1 {
+  margin: 0;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 2.2rem;
+  letter-spacing: -0.03em;
+}
+
+.admin-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.72rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.admin-refresh-btn .spin {
+  animation: admin-spin 0.7s linear infinite;
+}
+
+@keyframes admin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.admin-create-card {
+  margin-top: 0.4rem;
+}
+
+.admin-create-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.72rem;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 1.3rem;
+}
+
+.admin-create-form {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.admin-create-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.72rem;
+}
+
+.admin-field-label {
+  display: grid;
+  gap: 0.32rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  font-weight: 700;
+  color: rgb(47 47 46 / 66%);
+}
+
+.admin-rooms-section {
+  margin-top: 0.8rem;
+}
+
+.admin-rooms-section > h3 {
+  margin: 0 0 0.65rem;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 1.3rem;
+}
+
+.admin-rooms-grid {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.admin-room-card {
+  transition: box-shadow 150ms ease;
+}
+
+.admin-room-card.is-expanded {
+  box-shadow: 0 2px 12px rgb(0 0 0 / 6%);
+}
+
+.admin-room-top {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-room-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.admin-room-name-row h4 {
+  margin: 0;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 1.4rem;
+  letter-spacing: -0.02em;
+}
+
+.admin-room-created {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.admin-room-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  flex-wrap: wrap;
+}
+
+.admin-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.26rem;
+  padding: 0.18rem 0.48rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.admin-stat-chip strong {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 0.82rem;
+}
+
+.admin-room-host-key-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.admin-field-label-inline {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  color: rgb(47 47 46 / 58%);
+}
+
+.admin-host-key-value {
+  font-size: 0.82rem;
+  font-family: "Space Grotesk", monospace;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.admin-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border-radius: 6px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.admin-room-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.admin-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.admin-action-btn:hover:not(:disabled) {
+  background: var(--surface-strong);
+}
+
+.admin-action-reset {
+  color: #a06020;
+  border-color: #e0c890;
+  background: #fffbf0;
+}
+
+.admin-action-reset:hover:not(:disabled) {
+  background: #fff4dc;
+}
+
+.admin-action-delete {
+  color: var(--danger);
+  border-color: #f0c0b0;
+  background: #fff8f5;
+}
+
+.admin-action-delete:hover:not(:disabled) {
+  background: #ffefea;
+}
+
+.admin-qr-section {
+  margin-top: 0.72rem;
+  display: grid;
+  place-items: center;
+  gap: 0.5rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.admin-qr-image {
+  width: 180px;
+  height: 180px;
+  border: 1px solid #ebebeb;
+  border-radius: 6px;
+}
+
+.admin-qr-url {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+  word-break: break-all;
+  color: var(--muted);
+}
+
+.admin-links-section {
+  margin-top: 0.55rem;
+  display: grid;
+  gap: 0.42rem;
+}
+
+.admin-questions-section {
+  margin-top: 0.65rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.55rem;
+}
+
+.admin-questions-label {
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: rgb(47 47 46 / 52%);
+}
+
+.admin-questions-list {
+  margin-top: 0.38rem;
+  display: grid;
+  gap: 0.26rem;
+}
+
+.admin-question-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.32rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  background: var(--surface-soft);
+}
+
+.admin-question-row.is-current {
+  border-left: 4px solid var(--accent);
+  background: #fffdf2;
+}
+
+.admin-question-index {
+  font-weight: 700;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 0.72rem;
+  color: var(--accent-ink);
+  min-width: 1.6rem;
+}
+
+.admin-question-prompt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-question-phase {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.1rem 0.32rem;
+  border-radius: 999px;
+  background: var(--surface-strong);
+}
+
+.admin-question-phase.phase-open {
+  color: #2f7c37;
+  background: #e7f4e8;
+}
+
+.admin-question-phase.phase-closed {
+  color: #9a3f26;
+  background: #ffefec;
+}
+
+.admin-question-phase.phase-revealed {
+  color: var(--accent-ink);
+  background: #fff5ca;
+}
+
+.admin-question-votes {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 @media (max-width: 900px) {
   .app {
     width: calc(100% - 1rem);
@@ -1543,5 +1915,14 @@ button:disabled {
   .app-bottom-right {
     gap: 0.5rem;
     flex-wrap: wrap;
+  }
+
+  .admin-create-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-header {
+    flex-direction: column;
+    gap: 0.45rem;
   }
 }

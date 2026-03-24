@@ -1,0 +1,485 @@
+import { useCallback, useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import {
+  Copy,
+  CheckCheck,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+  Users,
+  Link2,
+  QrCode,
+  Eye,
+  EyeOff,
+  Shield,
+} from "lucide-react";
+
+const ADMIN_KEY_STORAGE_KEY = "syntax-live-admin-key";
+
+type RoomEntry = {
+  name: string;
+  host_key: string;
+  created_at: string;
+};
+
+type RoomStats = {
+  room: string;
+  currentQuestionIndex: number;
+  totalQuestions: number;
+  participants: number;
+  audienceCount: number;
+  hostCount: number;
+  projectorCount: number;
+  questions: Array<{
+    index: number;
+    id: string;
+    prompt: string;
+    phase: string;
+    totalVotes: number;
+  }>;
+};
+
+function readAdminKey(): string {
+  if (typeof window === "undefined") return "";
+  const params = new URLSearchParams(window.location.search);
+  const urlKey = params.get("adminKey") ?? params.get("key");
+  if (urlKey) {
+    window.localStorage.setItem(ADMIN_KEY_STORAGE_KEY, urlKey);
+    return urlKey;
+  }
+  return window.localStorage.getItem(ADMIN_KEY_STORAGE_KEY) ?? "";
+}
+
+function saveAdminKey(value: string) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(ADMIN_KEY_STORAGE_KEY, value);
+  }
+}
+
+async function adminFetch(path: string, adminKey: string, options?: RequestInit) {
+  const resp = await fetch(path, {
+    ...options,
+    headers: {
+      ...options?.headers,
+      "x-admin-key": adminKey,
+    },
+  });
+  return resp;
+}
+
+export function AdminPage() {
+  const [adminKey, setAdminKey] = useState(() => readAdminKey());
+  const [authenticated, setAuthenticated] = useState(false);
+  const [rooms, setRooms] = useState<RoomEntry[]>([]);
+  const [statsMap, setStatsMap] = useState<Record<string, RoomStats>>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [newRoomName, setNewRoomName] = useState("");
+  const [newRoomHostKey, setNewRoomHostKey] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const [expandedRoom, setExpandedRoom] = useState<string | null>(null);
+  const [showQr, setShowQr] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [showHostKeys, setShowHostKeys] = useState<Record<string, boolean>>({});
+
+  const fetchRooms = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await adminFetch("/api/admin/rooms", adminKey);
+      if (!resp.ok) {
+        if (resp.status === 401) {
+          setAuthenticated(false);
+          setError("Invalid admin key.");
+          setLoading(false);
+          return;
+        }
+        throw new Error(`${resp.status} ${resp.statusText}`);
+      }
+      const data = (await resp.json()) as RoomEntry[];
+      setRooms(data);
+      setAuthenticated(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch rooms");
+    }
+    setLoading(false);
+  }, [adminKey]);
+
+  const fetchStats = useCallback(
+    async (roomName: string) => {
+      try {
+        const resp = await adminFetch(
+          `/api/admin/rooms/${encodeURIComponent(roomName)}/stats`,
+          adminKey
+        );
+        if (resp.ok) {
+          const data = (await resp.json()) as RoomStats;
+          setStatsMap((prev) => ({ ...prev, [roomName]: data }));
+        }
+      } catch {
+        // Stats fetch failure is non-critical
+      }
+    },
+    [adminKey]
+  );
+
+  useEffect(() => {
+    if (adminKey.trim()) {
+      void fetchRooms();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated || rooms.length === 0) return;
+    for (const room of rooms) {
+      void fetchStats(room.name);
+    }
+    const interval = setInterval(() => {
+      for (const room of rooms) {
+        void fetchStats(room.name);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [authenticated, rooms, fetchStats]);
+
+  function handleLogin(e: FormEvent) {
+    e.preventDefault();
+    saveAdminKey(adminKey.trim());
+    void fetchRooms();
+  }
+
+  async function handleCreateRoom(e: FormEvent) {
+    e.preventDefault();
+    if (!newRoomName.trim() || !newRoomHostKey.trim()) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const resp = await adminFetch("/api/admin/rooms", adminKey, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: newRoomName.trim(), hostKey: newRoomHostKey.trim() }),
+      });
+      if (!resp.ok) {
+        const data = (await resp.json()) as { error?: string };
+        throw new Error(data.error ?? "Failed to create room");
+      }
+      setNewRoomName("");
+      setNewRoomHostKey("");
+      await fetchRooms();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create room");
+    }
+    setCreating(false);
+  }
+
+  async function handleDeleteRoom(roomName: string) {
+    if (!confirm(`Delete room "${roomName}"? This removes the room configuration but not its data.`)) {
+      return;
+    }
+    try {
+      await adminFetch(`/api/admin/rooms/${encodeURIComponent(roomName)}`, adminKey, {
+        method: "DELETE",
+      });
+      await fetchRooms();
+    } catch {
+      setError("Failed to delete room");
+    }
+  }
+
+  async function handleResetRoom(roomName: string) {
+    if (!confirm(`Reset room "${roomName}"? This clears all votes, phases, and resets to question 1.`)) {
+      return;
+    }
+    try {
+      const resp = await adminFetch(
+        `/api/admin/rooms/${encodeURIComponent(roomName)}/reset`,
+        adminKey,
+        { method: "POST" }
+      );
+      if (resp.ok) {
+        await fetchStats(roomName);
+      }
+    } catch {
+      setError("Failed to reset room");
+    }
+  }
+
+  function copyLink(label: string, url: string) {
+    void navigator.clipboard.writeText(url).then(() => {
+      setCopiedLink(label);
+      setTimeout(() => setCopiedLink((c) => (c === label ? null : c)), 1200);
+    });
+  }
+
+  function getRoomUrls(roomName: string, hostKey: string) {
+    if (typeof window === "undefined") return { audience: "", projector: "", host: "" };
+    const base = window.location.origin;
+    const roomPath = `/r/${encodeURIComponent(roomName)}`;
+    const hostUrl = new URL(`${roomPath}/host`, base);
+    if (hostKey) hostUrl.searchParams.set("hostKey", hostKey);
+    return {
+      audience: `${base}${roomPath}`,
+      projector: `${base}${roomPath}/screen`,
+      host: hostUrl.toString(),
+    };
+  }
+
+  if (!authenticated) {
+    return (
+      <main className="app admin-app">
+        <div className="admin-login-wrap">
+          <form className="admin-login-card" onSubmit={handleLogin}>
+            <div className="admin-login-icon">
+              <Shield size={32} strokeWidth={1.5} />
+            </div>
+            <h2>Admin Access</h2>
+            <p className="muted">Enter your admin key to manage rooms.</p>
+            <input
+              className="text-input"
+              type="password"
+              value={adminKey}
+              onChange={(e) => setAdminKey(e.currentTarget.value)}
+              placeholder="Admin key"
+              autoFocus
+            />
+            {error ? <p className="error">{error}</p> : null}
+            <button type="submit" disabled={!adminKey.trim()}>
+              Authenticate
+            </button>
+          </form>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="app admin-app">
+      <header className="admin-header">
+        <div>
+          <h1>Room Admin</h1>
+          <p className="muted">Create and manage poll rooms</p>
+        </div>
+        <button
+          type="button"
+          className="admin-refresh-btn"
+          onClick={() => fetchRooms()}
+          disabled={loading}
+        >
+          <RefreshCw size={14} strokeWidth={2} className={loading ? "spin" : ""} />
+          Refresh
+        </button>
+      </header>
+
+      {error ? <p className="error">{error}</p> : null}
+
+      <section className="panel admin-create-card">
+        <h3>
+          <Plus size={18} strokeWidth={2} /> Create Room
+        </h3>
+        <form className="admin-create-form" onSubmit={handleCreateRoom}>
+          <div className="admin-create-fields">
+            <label className="admin-field-label">
+              Room Name
+              <input
+                className="text-input"
+                value={newRoomName}
+                onChange={(e) => setNewRoomName(e.currentTarget.value)}
+                placeholder="e.g. main-stage"
+              />
+            </label>
+            <label className="admin-field-label">
+              Host Key
+              <input
+                className="text-input"
+                value={newRoomHostKey}
+                onChange={(e) => setNewRoomHostKey(e.currentTarget.value)}
+                placeholder="Secret host key for this room"
+              />
+            </label>
+          </div>
+          <button type="submit" disabled={creating || !newRoomName.trim() || !newRoomHostKey.trim()}>
+            {creating ? "Creating..." : "Create Room"}
+          </button>
+        </form>
+      </section>
+
+      <section className="admin-rooms-section">
+        <h3>Rooms ({rooms.length})</h3>
+        {rooms.length === 0 ? (
+          <p className="muted">No rooms yet. Create one above.</p>
+        ) : (
+          <div className="admin-rooms-grid">
+            {rooms.map((room) => {
+              const stats = statsMap[room.name];
+              const urls = getRoomUrls(room.name, room.host_key);
+              const isExpanded = expandedRoom === room.name;
+              const isQrVisible = showQr === room.name;
+              const isHostKeyVisible = showHostKeys[room.name] ?? false;
+              const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(urls.audience)}`;
+
+              return (
+                <div className={`panel admin-room-card ${isExpanded ? "is-expanded" : ""}`} key={room.name}>
+                  <div className="admin-room-top">
+                    <div className="admin-room-name-row">
+                      <h4>{room.name}</h4>
+                      <span className="admin-room-created">
+                        {new Date(room.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+
+                    <div className="admin-room-stats-row">
+                      {stats ? (
+                        <>
+                          <span className="admin-stat-chip" title="Participants">
+                            <Users size={12} strokeWidth={2} />
+                            <strong>{stats.participants}</strong>
+                          </span>
+                          <span className="admin-stat-chip" title="Questions">
+                            Q{stats.currentQuestionIndex + 1}/{stats.totalQuestions}
+                          </span>
+                          <span className="admin-stat-chip" title="Connections">
+                            A:{stats.audienceCount} H:{stats.hostCount} P:{stats.projectorCount}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="muted" style={{ fontSize: "0.78rem" }}>Loading stats...</span>
+                      )}
+                    </div>
+
+                    <div className="admin-room-host-key-row">
+                      <span className="admin-field-label-inline">Host Key:</span>
+                      <code className="admin-host-key-value">
+                        {isHostKeyVisible ? room.host_key : "••••••••"}
+                      </code>
+                      <button
+                        type="button"
+                        className="admin-icon-btn"
+                        onClick={() =>
+                          setShowHostKeys((prev) => ({
+                            ...prev,
+                            [room.name]: !prev[room.name],
+                          }))
+                        }
+                        title={isHostKeyVisible ? "Hide" : "Show"}
+                      >
+                        {isHostKeyVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+
+                    <div className="admin-room-actions">
+                      <button
+                        type="button"
+                        className="admin-action-btn"
+                        onClick={() => setExpandedRoom(isExpanded ? null : room.name)}
+                      >
+                        <Link2 size={13} strokeWidth={2} />
+                        Links
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-action-btn"
+                        onClick={() => setShowQr(isQrVisible ? null : room.name)}
+                      >
+                        <QrCode size={13} strokeWidth={2} />
+                        QR
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-action-btn admin-action-reset"
+                        onClick={() => handleResetRoom(room.name)}
+                      >
+                        <RotateCcw size={13} strokeWidth={2} />
+                        Reset
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-action-btn admin-action-delete"
+                        onClick={() => handleDeleteRoom(room.name)}
+                      >
+                        <Trash2 size={13} strokeWidth={2} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {isQrVisible ? (
+                    <div className="admin-qr-section">
+                      <img
+                        src={qrUrl}
+                        alt={`QR code for ${room.name}`}
+                        className="admin-qr-image"
+                      />
+                      <p className="admin-qr-url">{urls.audience}</p>
+                    </div>
+                  ) : null}
+
+                  {isExpanded ? (
+                    <div className="admin-links-section">
+                      {(["audience", "projector", "host"] as const).map((target) => {
+                        const linkKey = `${room.name}-${target}`;
+                        return (
+                          <div className="link-row" key={target}>
+                            <span className="link-row-label">
+                              <Link2 size={14} strokeWidth={2} />
+                              {target.charAt(0).toUpperCase() + target.slice(1)}
+                            </span>
+                            <div className="link-row-actions">
+                              <a href={urls[target]} target="_blank" rel="noreferrer">
+                                Open
+                              </a>
+                              <button
+                                className="copy-link-btn"
+                                onClick={() => copyLink(linkKey, urls[target])}
+                                type="button"
+                              >
+                                {copiedLink === linkKey ? (
+                                  <CheckCheck size={14} strokeWidth={2} />
+                                ) : (
+                                  <Copy size={14} strokeWidth={2} />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
+                  {stats && stats.questions.length > 0 ? (
+                    <div className="admin-questions-section">
+                      <span className="admin-questions-label">Questions</span>
+                      <div className="admin-questions-list">
+                        {stats.questions.map((q) => (
+                          <div
+                            className={`admin-question-row ${q.index === stats.currentQuestionIndex ? "is-current" : ""}`}
+                            key={q.id}
+                          >
+                            <span className="admin-question-index">Q{q.index + 1}</span>
+                            <span className="admin-question-prompt">{q.prompt}</span>
+                            <span className={`admin-question-phase phase-${q.phase}`}>
+                              {q.phase}
+                            </span>
+                            <span className="admin-question-votes">{q.totalVotes} votes</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <footer className="app-bottom-bar">
+        <span className="app-bottom-left">SynHole Admin</span>
+        <div className="app-bottom-right">
+          <span>{rooms.length} room{rooms.length !== 1 ? "s" : ""}</span>
+        </div>
+      </footer>
+    </main>
+  );
+}

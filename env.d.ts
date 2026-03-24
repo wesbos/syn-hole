@@ -3,7 +3,9 @@
 declare namespace Cloudflare {
 	interface Env {
 		HOST_KEY: "change-me";
+		ADMIN_KEY: string;
 		PollRoom: DurableObjectNamespace<import("./src/poll-room").PollRoom>;
+		AdminRegistry: DurableObjectNamespace<import("./src/admin-registry").AdminRegistry>;
 	}
 }
 interface Env extends Cloudflare.Env {}

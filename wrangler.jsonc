@@ -6,6 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "HOST_KEY": "change-me",
+    "ADMIN_KEY": "change-me-admin",
   },
   "durable_objects": {
     "bindings": [
@@ -13,12 +14,20 @@
         "name": "PollRoom",
         "class_name": "PollRoom",
       },
+      {
+        "name": "AdminRegistry",
+        "class_name": "AdminRegistry",
+      },
     ],
   },
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["PollRoom"],
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["AdminRegistry"],
     },
   ],
 }
