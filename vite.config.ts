@@ -1,8 +1,15 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
-import devtoolsJson from "vite-plugin-devtools-json";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  plugins: [cloudflare(), react(), devtoolsJson()]
+  resolve: {
+    tsconfigPaths: true,
+  },
+  plugins: [
+    cloudflare({ viteEnvironment: { name: "ssr" } }),
+    tanstackStart(),
+    react(),
+  ],
 });
