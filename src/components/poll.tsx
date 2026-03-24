@@ -1,18 +1,8 @@
-import "./styles.css";
-
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { createRoot } from "react-dom/client";
 import usePartySocket from "partysocket/react";
 import { Check, CheckCheck, Copy, Eye, Link2, LockKeyhole, Trophy, Users } from "lucide-react";
-import {
-  BrowserRouter,
-  Navigate,
-  Route,
-  Routes,
-  useParams,
-  useSearchParams
-} from "react-router-dom";
+import { useParams, useSearch } from "@tanstack/react-router";
 import type {
   IncomingMessage,
   OutgoingMessage,
@@ -20,8 +10,8 @@ import type {
   PollChoiceQuestionPublic,
   PollNumberQuestion,
   PollNumberQuestionPublic,
-  PollRole
-} from "./types";
+  PollRole,
+} from "~/types";
 
 type ViewMode = "audience" | "host" | "projector";
 
@@ -35,24 +25,29 @@ const phaseLabel: Record<string, string> = {
   idle: "Waiting to open voting",
   open: "Voting is open",
   closed: "Voting closed",
-  revealed: "Answer revealed"
+  revealed: "Answer revealed",
 };
 
-function PollPage(props: { view: ViewMode }) {
+export function PollPage(props: { view: ViewMode; room?: string }) {
   const { view } = props;
-  const params = useParams<{ room: string }>();
-  const room = params.room ?? DEFAULT_ROOM;
-  const [searchParams] = useSearchParams();
+  const room = props.room ?? DEFAULT_ROOM;
   const role: PollRole =
     view === "host"
       ? "host"
       : view === "projector"
         ? "projector"
         : "audience";
-  const showDebug = searchParams.get("debug") === "1";
+
+  const [showDebug, setShowDebug] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setShowDebug(params.get("debug") === "1");
+  }, []);
 
   const [hostKey, setHostKey] = useState(() => {
-    const urlHostKey = searchParams.get("hostKey") ?? searchParams.get("key");
+    if (typeof window === "undefined") return "";
+    const params = new URLSearchParams(window.location.search);
+    const urlHostKey = params.get("hostKey") ?? params.get("key");
     if (urlHostKey) {
       saveHostKey(urlHostKey);
       return urlHostKey;
@@ -92,7 +87,7 @@ function PollPage(props: { view: ViewMode }) {
       role,
       voterId: role === "audience" ? audienceVoterId : undefined,
       name: role === "audience" ? audienceName : undefined,
-      hostKey: role === "host" ? hostKey.trim() : undefined
+      hostKey: role === "host" ? hostKey.trim() : undefined,
     }),
     onOpen() {
       setStatus("connected");
@@ -116,7 +111,7 @@ function PollPage(props: { view: ViewMode }) {
       } catch {
         setErrorMessage("Received malformed payload from server.");
       }
-    }
+    },
   });
 
   useEffect(() => {
@@ -134,39 +129,31 @@ function PollPage(props: { view: ViewMode }) {
   }, [role, stateMessage]);
 
   useEffect(() => {
-    const urlHostKey = searchParams.get("hostKey") ?? searchParams.get("key");
-    if (!urlHostKey) {
-      return;
-    }
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const urlHostKey = params.get("hostKey") ?? params.get("key");
+    if (!urlHostKey) return;
     setHostKey(urlHostKey);
     saveHostKey(urlHostKey);
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
-    if (!hostKey.trim()) {
-      return;
-    }
+    if (!hostKey.trim()) return;
     saveHostKey(hostKey.trim());
   }, [hostKey]);
 
   useEffect(() => {
-    if (role !== "audience" || !needsAudienceName) {
-      return;
-    }
+    if (role !== "audience" || !needsAudienceName) return;
 
     let cancelled = false;
 
     void fetch("/api/bootstrap")
       .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("bootstrap request failed");
-        }
+        if (!response.ok) throw new Error("bootstrap request failed");
         return (await response.json()) as { defaultAudienceName?: unknown };
       })
       .then((data) => {
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
         const suggested =
           typeof data.defaultAudienceName === "string" && data.defaultAudienceName.trim().length > 0
             ? data.defaultAudienceName
@@ -174,9 +161,7 @@ function PollPage(props: { view: ViewMode }) {
         setPendingAudienceName((current) => (current.trim().length > 0 ? current : suggested));
       })
       .catch(() => {
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
         setPendingAudienceName((current) =>
           current.trim().length > 0 ? current : "Anon from somewhere"
         );
@@ -199,9 +184,7 @@ function PollPage(props: { view: ViewMode }) {
   }
 
   function onAudienceOptionToggle(optionId: string) {
-    if (!question || question.kind !== "choice") {
-      return;
-    }
+    if (!question || question.kind !== "choice") return;
     let nextOptionIds: string[] = [];
     if (question.allowMultiple) {
       nextOptionIds = selectedOptionIds.includes(optionId)
@@ -212,32 +195,21 @@ function PollPage(props: { view: ViewMode }) {
       nextOptionIds = selectedOptionIds[0] === optionId ? [] : [optionId];
       setSelectedOptionIds(nextOptionIds);
     }
-
-    sendMessage({
-      type: "vote",
-      optionIds: nextOptionIds
-    });
+    sendMessage({ type: "vote", optionIds: nextOptionIds });
   }
 
   function onNumberGuessInputChange(value: string) {
     setNumberGuessInput(value);
-    if (numberGuessError) {
-      setNumberGuessError(null);
-    }
+    if (numberGuessError) setNumberGuessError(null);
   }
 
   function submitNumberGuess() {
-    if (!question || question.kind !== "number") {
-      return;
-    }
+    if (!question || question.kind !== "number") return;
 
     const trimmed = numberGuessInput.trim();
     if (trimmed.length === 0) {
       setNumberGuessError(null);
-      sendMessage({
-        type: "vote-number",
-        value: null
-      });
+      sendMessage({ type: "vote-number", value: null });
       return;
     }
 
@@ -256,10 +228,7 @@ function PollPage(props: { view: ViewMode }) {
     }
 
     setNumberGuessError(null);
-    sendMessage({
-      type: "vote-number",
-      value: parsed
-    });
+    sendMessage({ type: "vote-number", value: parsed });
   }
 
   function submitAudienceName(event: FormEvent<HTMLFormElement>) {
@@ -375,7 +344,7 @@ function AudienceView(props: {
     numberGuessInput,
     numberGuessError,
     onNumberGuessInputChange,
-    onSubmitNumberGuess
+    onSubmitNumberGuess,
   } = props;
   const question = stateMessage.question;
   if (!question) {
@@ -424,7 +393,6 @@ function AudienceView(props: {
   return (
     <section className="panel">
       <h2>{question.prompt}</h2>
-
       <ResultsList
         question={question}
         voteCounts={stateMessage.voteCounts}
@@ -460,7 +428,7 @@ function HostView(props: {
     canControl,
     hostKey,
     onHostKeyChange,
-    roomLinks
+    roomLinks,
   } = props;
   const hostQuestions = stateMessage.host?.questions ?? [];
   const question = stateMessage.question;
@@ -484,7 +452,7 @@ function HostView(props: {
       case "switch":
         sendMessage({
           type: "set-question",
-          questionIndex: stateMessage.currentQuestionIndex + 1
+          questionIndex: stateMessage.currentQuestionIndex + 1,
         });
         return;
       case "none":
@@ -530,7 +498,7 @@ function HostView(props: {
             onChange={(event) =>
               sendMessage({
                 type: "set-question",
-                questionIndex: Number(event.currentTarget.value)
+                questionIndex: Number(event.currentTarget.value),
               })
             }
             disabled={!canControl}
@@ -754,7 +722,7 @@ function ResultsList(props: {
     selectionName = "poll-option",
     canInteract = false,
     onToggleOption,
-    showAudienceFeedback = false
+    showAudienceFeedback = false,
   } = props;
   if (!showResults && !showOptionsWhenHidden) {
     return <p className="muted">Results are hidden until reveal.</p>;
@@ -878,20 +846,14 @@ function getAudienceOptionFeedback(
   isSelected: boolean,
   isCorrectOption: boolean
 ): "selected-correct" | "selected-wrong" | "missed-correct" | null {
-  if (isSelected && isCorrectOption) {
-    return "selected-correct";
-  }
-  if (isSelected && !isCorrectOption) {
-    return "selected-wrong";
-  }
-  if (!isSelected && isCorrectOption) {
-    return "missed-correct";
-  }
+  if (isSelected && isCorrectOption) return "selected-correct";
+  if (isSelected && !isCorrectOption) return "selected-wrong";
+  if (!isSelected && isCorrectOption) return "missed-correct";
   return null;
 }
 
 function getRoomLinks(room: string, hostKey: string) {
-  const base = window.location.origin;
+  const base = typeof window !== "undefined" ? window.location.origin : "";
   const roomPath = `/r/${encodeURIComponent(room)}`;
   const hostUrl = new URL(`${base}${roomPath}/host`);
   if (hostKey) {
@@ -901,7 +863,7 @@ function getRoomLinks(room: string, hostKey: string) {
   return {
     audience: `${base}${roomPath}`,
     projector: `${base}${roomPath}/screen`,
-    host: hostUrl.toString()
+    host: hostUrl.toString(),
   };
 }
 
@@ -911,15 +873,9 @@ function getSmartNextAction(
   phase: Extract<OutgoingMessage, { type: "state" }>["phase"],
   hasNextQuestion: boolean
 ): SmartNextAction {
-  if (phase === "idle") {
-    return "open";
-  }
-  if (phase === "open") {
-    return "close";
-  }
-  if (phase === "closed") {
-    return "reveal";
-  }
+  if (phase === "idle") return "open";
+  if (phase === "open") return "close";
+  if (phase === "closed") return "reveal";
   return hasNextQuestion ? "switch" : "none";
 }
 
@@ -939,10 +895,9 @@ function getSmartNextLabel(action: SmartNextAction): string {
 }
 
 function getOrCreateVoterId(): string {
+  if (typeof window === "undefined") return "";
   const existingLocal = window.localStorage.getItem(VOTER_STORAGE_KEY);
-  if (existingLocal) {
-    return existingLocal;
-  }
+  if (existingLocal) return existingLocal;
   const existingSession = window.sessionStorage.getItem(VOTER_STORAGE_KEY);
   if (existingSession) {
     window.localStorage.setItem(VOTER_STORAGE_KEY, existingSession);
@@ -959,38 +914,19 @@ function getOrCreateVoterId(): string {
 }
 
 function saveAudienceName(value: string) {
-  window.localStorage.setItem(AUDIENCE_NAME_STORAGE_KEY, value);
+  if (typeof window !== "undefined") window.localStorage.setItem(AUDIENCE_NAME_STORAGE_KEY, value);
 }
 
 function readAudienceName() {
+  if (typeof window === "undefined") return "";
   return window.localStorage.getItem(AUDIENCE_NAME_STORAGE_KEY) ?? "";
 }
 
 function saveHostKey(value: string) {
-  window.localStorage.setItem(HOST_KEY_STORAGE_KEY, value);
+  if (typeof window !== "undefined") window.localStorage.setItem(HOST_KEY_STORAGE_KEY, value);
 }
 
 function readHostKey() {
+  if (typeof window === "undefined") return "";
   return window.localStorage.getItem(HOST_KEY_STORAGE_KEY) ?? "";
 }
-
-function AppRouter() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Navigate to={`/r/${DEFAULT_ROOM}`} replace />} />
-        <Route path="/host" element={<Navigate to={`/r/${DEFAULT_ROOM}/host`} replace />} />
-        <Route
-          path="/screen"
-          element={<Navigate to={`/r/${DEFAULT_ROOM}/screen`} replace />}
-        />
-        <Route path="/r/:room" element={<PollPage view="audience" />} />
-        <Route path="/r/:room/host" element={<PollPage view="host" />} />
-        <Route path="/r/:room/screen" element={<PollPage view="projector" />} />
-        <Route path="*" element={<Navigate to={`/r/${DEFAULT_ROOM}`} replace />} />
-      </Routes>
-    </BrowserRouter>
-  );
-}
-
-createRoot(document.getElementById("root")!).render(<AppRouter />);
