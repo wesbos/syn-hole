@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "syn-hole",
   "main": "src/server.ts",
-  "compatibility_date": "2026-03-24",
+  "compatibility_date": "2026-03-17",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "HOST_KEY": "change-me",

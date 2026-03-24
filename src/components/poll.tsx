@@ -853,12 +853,22 @@ function getAudienceOptionFeedback(
 }
 
 function getRoomLinks(room: string, hostKey: string) {
-  const base = typeof window !== "undefined" ? window.location.origin : "";
   const roomPath = `/r/${encodeURIComponent(room)}`;
-  const hostUrl = new URL(`${base}${roomPath}/host`);
-  if (hostKey) {
-    hostUrl.searchParams.set("hostKey", hostKey);
+  const hostPath = `${roomPath}/host`;
+  if (typeof window === "undefined") {
+    const host = hostKey
+      ? `${hostPath}?hostKey=${encodeURIComponent(hostKey)}`
+      : hostPath;
+    return {
+      audience: roomPath,
+      projector: `${roomPath}/screen`,
+      host,
+    };
   }
+
+  const base = window.location.origin;
+  const hostUrl = new URL(hostPath, base);
+  if (hostKey) hostUrl.searchParams.set("hostKey", hostKey);
 
   return {
     audience: `${base}${roomPath}`,
