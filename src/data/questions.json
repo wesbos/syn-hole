@@ -1,0 +1,77 @@
+[
+  {
+    "id": "ts-narrowing-in-operator",
+    "prompt": "In TypeScript, which operator is commonly used to narrow a union by checking whether a property exists?",
+    "allowMultiple": false,
+    "hideResultsUntilReveal": true,
+    "options": [
+      { "id": "in", "label": "in" },
+      { "id": "instanceof", "label": "instanceof" },
+      { "id": "typeof", "label": "typeof" },
+      { "id": "extends", "label": "extends" }
+    ],
+    "correctOptionIds": ["in"]
+  },
+  {
+    "id": "js-event-loop-microtasks",
+    "prompt": "Which of these run in the microtask queue in JavaScript runtimes?",
+    "allowMultiple": true,
+    "hideResultsUntilReveal": true,
+    "options": [
+      { "id": "promise-then", "label": "Promise.then callback" },
+      { "id": "queue-microtask", "label": "queueMicrotask callback" },
+      { "id": "set-timeout", "label": "setTimeout callback" },
+      { "id": "raf", "label": "requestAnimationFrame callback" }
+    ],
+    "correctOptionIds": ["promise-then", "queue-microtask"]
+  },
+  {
+    "id": "ts-utility-types-shape",
+    "prompt": "Which TypeScript utility types keep the same property keys but transform their modifiers?",
+    "allowMultiple": true,
+    "hideResultsUntilReveal": true,
+    "options": [
+      { "id": "partial", "label": "Partial<T>" },
+      { "id": "required", "label": "Required<T>" },
+      { "id": "readonly", "label": "Readonly<T>" },
+      { "id": "record", "label": "Record<K, T>" }
+    ],
+    "correctOptionIds": ["partial", "required", "readonly"]
+  },
+  {
+    "id": "js-arrow-this",
+    "prompt": "What is true about `this` inside an arrow function?",
+    "allowMultiple": false,
+    "hideResultsUntilReveal": true,
+    "options": [
+      { "id": "lexical-this", "label": "It is lexically captured from the surrounding scope" },
+      { "id": "dynamic-this", "label": "It is dynamically bound at call time" },
+      { "id": "window-this", "label": "It always points to window/globalThis" },
+      { "id": "new-this", "label": "It creates its own `this` like a constructor" }
+    ],
+    "correctOptionIds": ["lexical-this"]
+  },
+  {
+    "id": "ts-as-const",
+    "prompt": "What does `as const` do in TypeScript?",
+    "allowMultiple": true,
+    "hideResultsUntilReveal": true,
+    "options": [
+      { "id": "literal-narrowing", "label": "Narrows values to literal types" },
+      { "id": "readonly-props", "label": "Marks object properties as readonly" },
+      { "id": "readonly-tuples", "label": "Converts array literals to readonly tuples" },
+      { "id": "runtime-freeze", "label": "Deep-freezes values at runtime" }
+    ],
+    "correctOptionIds": ["literal-narrowing", "readonly-props", "readonly-tuples"]
+  },
+  {
+    "kind": "number",
+    "id": "guess-token-count",
+    "prompt": "Guess the number of tokens",
+    "correctNumber": 128000,
+    "min": 0,
+    "max": 500000,
+    "step": 1,
+    "hideResultsUntilReveal": true
+  }
+]

@@ -1,0 +1,26 @@
+{
+  "name": "partyserver-live-polls",
+  "main": "src/server.ts",
+  "compatibility_date": "2025-12-17",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    "HOST_KEY": "change-me"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PollRoom",
+        "class_name": "PollRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1", // Should be unique for each entry
+      "new_sqlite_classes": ["PollRoom"]
+    }
+  ]
+}
