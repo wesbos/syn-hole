@@ -1,29 +1,33 @@
 import { DurableObject } from "cloudflare:workers";
+import { eq, desc } from "drizzle-orm";
+import { runMigrations, schema } from "./db";
+import type { AppDb } from "./db";
 
 export class AdminRegistry extends DurableObject<Env> {
-  private schemaInitialized = false;
+  private db: AppDb | null = null;
 
-  private ensureSchema() {
-    if (this.schemaInitialized) return;
-    this.ctx.storage.sql.exec(`
-      CREATE TABLE IF NOT EXISTS rooms (
-        name TEXT PRIMARY KEY,
-        host_key TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    `);
-    this.schemaInitialized = true;
+  private getDb(): AppDb {
+    if (!this.db) {
+      this.db = runMigrations(this.ctx.storage);
+    }
+    return this.db;
   }
 
   async fetch(request: Request): Promise<Response> {
-    this.ensureSchema();
+    const db = this.getDb();
     const url = new URL(request.url);
     const path = url.pathname;
 
     if (path === "/rooms" && request.method === "GET") {
-      const rows = this.ctx.storage.sql
-        .exec("SELECT name, host_key, created_at FROM rooms ORDER BY created_at DESC")
-        .toArray();
+      const rows = db
+        .select({
+          name: schema.rooms.name,
+          host_key: schema.rooms.hostKey,
+          created_at: schema.rooms.createdAt,
+        })
+        .from(schema.rooms)
+        .orderBy(desc(schema.rooms.createdAt))
+        .all();
       return Response.json(rows);
     }
 
@@ -42,11 +46,13 @@ export class AdminRegistry extends DurableObject<Env> {
       if (!name) {
         return Response.json({ error: "Invalid room name" }, { status: 400 });
       }
-      this.ctx.storage.sql.exec(
-        "INSERT INTO rooms (name, host_key) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET host_key = excluded.host_key",
-        name,
-        hostKey
-      );
+      db.insert(schema.rooms)
+        .values({ name, hostKey })
+        .onConflictDoUpdate({
+          target: schema.rooms.name,
+          set: { hostKey },
+        })
+        .run();
       return Response.json({ ok: true, name });
     }
 
@@ -57,15 +63,20 @@ export class AdminRegistry extends DurableObject<Env> {
     const isHostKeyRequest = !!roomMatch[2];
 
     if (isHostKeyRequest && request.method === "GET") {
-      const rows = this.ctx.storage.sql
-        .exec("SELECT host_key FROM rooms WHERE name = ? LIMIT 1", roomName)
-        .toArray();
+      const rows = db
+        .select({ hostKey: schema.rooms.hostKey })
+        .from(schema.rooms)
+        .where(eq(schema.rooms.name, roomName))
+        .limit(1)
+        .all();
       if (rows.length === 0) return Response.json({ found: false });
-      return Response.json({ found: true, hostKey: rows[0].host_key });
+      return Response.json({ found: true, hostKey: rows[0].hostKey });
     }
 
     if (!isHostKeyRequest && request.method === "DELETE") {
-      this.ctx.storage.sql.exec("DELETE FROM rooms WHERE name = ?", roomName);
+      db.delete(schema.rooms)
+        .where(eq(schema.rooms.name, roomName))
+        .run();
       return Response.json({ ok: true });
     }
 

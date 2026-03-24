@@ -1,6 +1,9 @@
 import { Server } from "partyserver";
 import type { Connection, ConnectionContext } from "partyserver";
+import { eq, and } from "drizzle-orm";
 import questionsJson from "./data/questions.json";
+import { runMigrations, schema } from "./db";
+import type { AppDb } from "./db";
 import type {
   IncomingMessage,
   OutgoingMessage,
@@ -27,6 +30,14 @@ export class PollRoom extends Server<Env> {
   private readonly votesByQuestionIndex = new Map<number, Map<string, string[]>>();
   private stateLoaded = false;
   private loadStatePromise: Promise<void> | null = null;
+  private db: AppDb | null = null;
+
+  private getDb(): AppDb {
+    if (!this.db) {
+      this.db = runMigrations(this.ctx.storage);
+    }
+    return this.db;
+  }
 
   async onRequest(request: Request): Promise<Response> {
     await this.ensureStateLoaded();
@@ -78,7 +89,7 @@ export class PollRoom extends Server<Env> {
       this.currentQuestionIndex = 0;
       this.phaseByQuestionIndex.clear();
       this.votesByQuestionIndex.clear();
-      await this.clearPersistedState();
+      this.clearPersistedState();
       this.broadcastState();
       return Response.json({ ok: true });
     }
@@ -122,16 +133,16 @@ export class PollRoom extends Server<Env> {
     }
 
     if (incoming.type === "vote") {
-      await this.handleChoiceVote(conn, incoming.optionIds);
+      this.handleChoiceVote(conn, incoming.optionIds);
       return;
     }
 
     if (incoming.type === "vote-number") {
-      await this.handleNumberVote(conn, incoming.value);
+      this.handleNumberVote(conn, incoming.value);
       return;
     }
 
-    await this.handleHostCommand(incoming);
+    this.handleHostCommand(incoming);
   }
 
   onClose(
@@ -147,7 +158,7 @@ export class PollRoom extends Server<Env> {
     this.broadcastState();
   }
 
-  private async handleChoiceVote(conn: Connection<PollConnectionState>, optionIds: string[]) {
+  private handleChoiceVote(conn: Connection<PollConnectionState>, optionIds: string[]) {
     if (conn.state?.role !== "audience") {
       this.sendError(conn, "Only audience clients can submit votes.");
       return;
@@ -184,11 +195,11 @@ export class PollRoom extends Server<Env> {
       votesForQuestion.set(conn.state.voterId, validated.optionIds);
     }
 
-    await this.persistVote(this.currentQuestionIndex, conn.state.voterId, validated.optionIds);
+    this.persistVote(this.currentQuestionIndex, conn.state.voterId, validated.optionIds);
     this.broadcastState();
   }
 
-  private async handleNumberVote(conn: Connection<PollConnectionState>, value: number | null) {
+  private handleNumberVote(conn: Connection<PollConnectionState>, value: number | null) {
     if (conn.state?.role !== "audience") {
       this.sendError(conn, "Only audience clients can submit votes.");
       return;
@@ -219,18 +230,18 @@ export class PollRoom extends Server<Env> {
     const votesForQuestion = this.getVotesForQuestion(this.currentQuestionIndex);
     if (validated.value === null) {
       votesForQuestion.delete(conn.state.voterId);
-      await this.persistVote(this.currentQuestionIndex, conn.state.voterId, []);
+      this.persistVote(this.currentQuestionIndex, conn.state.voterId, []);
       this.broadcastState();
       return;
     }
 
     const storedSelection = [String(validated.value)];
     votesForQuestion.set(conn.state.voterId, storedSelection);
-    await this.persistVote(this.currentQuestionIndex, conn.state.voterId, storedSelection);
+    this.persistVote(this.currentQuestionIndex, conn.state.voterId, storedSelection);
     this.broadcastState();
   }
 
-  private async handleHostCommand(
+  private handleHostCommand(
     message: Exclude<IncomingMessage, { type: "vote" | "vote-number" }>
   ) {
     switch (message.type) {
@@ -243,31 +254,31 @@ export class PollRoom extends Server<Env> {
           return;
         this.currentQuestionIndex = message.questionIndex;
         this.phaseByQuestionIndex.set(this.currentQuestionIndex, "open");
-        await this.persistCurrentQuestionIndex();
-        await this.persistPhase(this.currentQuestionIndex, "open");
+        this.persistCurrentQuestionIndex();
+        this.persistPhase(this.currentQuestionIndex, "open");
         this.broadcastState();
         return;
       }
       case "open-voting": {
         this.phaseByQuestionIndex.set(this.currentQuestionIndex, "open");
-        await this.persistPhase(this.currentQuestionIndex, "open");
+        this.persistPhase(this.currentQuestionIndex, "open");
         this.broadcastState();
         return;
       }
       case "close-voting": {
         this.phaseByQuestionIndex.set(this.currentQuestionIndex, "closed");
-        await this.persistPhase(this.currentQuestionIndex, "closed");
+        this.persistPhase(this.currentQuestionIndex, "closed");
         this.broadcastState();
         return;
       }
       case "reveal": {
         if (this.getCurrentPhase() === "open") {
           this.phaseByQuestionIndex.set(this.currentQuestionIndex, "closed");
-          await this.persistPhase(this.currentQuestionIndex, "closed");
+          this.persistPhase(this.currentQuestionIndex, "closed");
           this.broadcastState();
         }
         this.phaseByQuestionIndex.set(this.currentQuestionIndex, "revealed");
-        await this.persistPhase(this.currentQuestionIndex, "revealed");
+        this.persistPhase(this.currentQuestionIndex, "revealed");
         this.broadcastState();
         return;
       }
@@ -275,7 +286,7 @@ export class PollRoom extends Server<Env> {
         this.currentQuestionIndex = 0;
         this.phaseByQuestionIndex.clear();
         this.votesByQuestionIndex.clear();
-        await this.clearPersistedState();
+        this.clearPersistedState();
         this.broadcastState();
         return;
       }
@@ -523,6 +534,8 @@ export class PollRoom extends Server<Env> {
     };
   }
 
+  // ── Persistence (Drizzle) ─────────────────────────────────────
+
   private async ensureStateLoaded() {
     if (this.stateLoaded) return;
     if (this.loadStatePromise) {
@@ -539,17 +552,20 @@ export class PollRoom extends Server<Env> {
   }
 
   private async loadStateFromStorage() {
-    this.ensureSchema();
+    const db = this.getDb();
+
     this.phaseByQuestionIndex.clear();
     this.votesByQuestionIndex.clear();
     this.currentQuestionIndex = 0;
 
-    const metaRows = this.sql<{ value: string }>`
-      SELECT value
-      FROM poll_room_meta
-      WHERE key = 'currentQuestionIndex'
-      LIMIT 1
-    `;
+    // Load current question index
+    const metaRows = db
+      .select({ value: schema.pollRoomMeta.value })
+      .from(schema.pollRoomMeta)
+      .where(eq(schema.pollRoomMeta.key, "currentQuestionIndex"))
+      .limit(1)
+      .all();
+
     const currentIndexRaw = metaRows[0]?.value;
     const parsedCurrentIndex = Number.parseInt(currentIndexRaw ?? "", 10);
     if (
@@ -560,37 +576,44 @@ export class PollRoom extends Server<Env> {
       this.currentQuestionIndex = parsedCurrentIndex;
     }
 
-    const phaseRows = this.sql<{ question_index: number; phase: string }>`
-      SELECT question_index, phase
-      FROM poll_room_phase
-    `;
+    // Load phases
+    const phaseRows = db
+      .select({
+        questionIndex: schema.pollRoomPhase.questionIndex,
+        phase: schema.pollRoomPhase.phase,
+      })
+      .from(schema.pollRoomPhase)
+      .all();
+
     for (let index = 0; index < phaseRows.length; index += 1) {
       const row = phaseRows[index];
-      if (!isValidQuestionIndex(row.question_index) || !isPollPhase(row.phase)) continue;
-      this.phaseByQuestionIndex.set(row.question_index, row.phase);
+      if (!isValidQuestionIndex(row.questionIndex) || !isPollPhase(row.phase)) continue;
+      this.phaseByQuestionIndex.set(row.questionIndex, row.phase);
     }
 
-    const voteRows = this.sql<{
-      question_index: number;
-      voter_id: string;
-      option_ids: string;
-    }>`
-      SELECT question_index, voter_id, option_ids
-      FROM poll_room_vote
-    `;
+    // Load votes
+    const voteRows = db
+      .select({
+        questionIndex: schema.pollRoomVote.questionIndex,
+        voterId: schema.pollRoomVote.voterId,
+        optionIds: schema.pollRoomVote.optionIds,
+      })
+      .from(schema.pollRoomVote)
+      .all();
+
     for (let index = 0; index < voteRows.length; index += 1) {
       const row = voteRows[index];
-      if (!isValidQuestionIndex(row.question_index) || row.voter_id.length === 0) continue;
+      if (!isValidQuestionIndex(row.questionIndex) || row.voterId.length === 0) continue;
 
       let parsedOptionIds: unknown;
       try {
-        parsedOptionIds = JSON.parse(row.option_ids);
+        parsedOptionIds = JSON.parse(row.optionIds);
       } catch {
         continue;
       }
       if (!Array.isArray(parsedOptionIds)) continue;
 
-      const question = QUESTIONS[row.question_index];
+      const question = QUESTIONS[row.questionIndex];
       if (question.kind === "choice") {
         const allowedOptionIds = new Set(question.options.map((option) => option.id));
         const validOptionIds: string[] = [];
@@ -602,80 +625,72 @@ export class PollRoom extends Server<Env> {
         if (!question.allowMultiple && validOptionIds.length > 1) continue;
         if (validOptionIds.length === 0) continue;
 
-        const voteMap = this.getVotesForQuestion(row.question_index);
-        voteMap.set(row.voter_id, validOptionIds);
+        const voteMap = this.getVotesForQuestion(row.questionIndex);
+        voteMap.set(row.voterId, validOptionIds);
         continue;
       }
 
       const restoredGuess = parseStoredNumberGuess(question, parsedOptionIds);
       if (restoredGuess === null) continue;
-      const voteMap = this.getVotesForQuestion(row.question_index);
-      voteMap.set(row.voter_id, [String(restoredGuess)]);
+      const voteMap = this.getVotesForQuestion(row.questionIndex);
+      voteMap.set(row.voterId, [String(restoredGuess)]);
     }
 
     this.stateLoaded = true;
   }
 
-  private ensureSchema() {
-    this.sql`
-      CREATE TABLE IF NOT EXISTS poll_room_meta (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      )
-    `;
-    this.sql`
-      CREATE TABLE IF NOT EXISTS poll_room_phase (
-        question_index INTEGER PRIMARY KEY,
-        phase TEXT NOT NULL
-      )
-    `;
-    this.sql`
-      CREATE TABLE IF NOT EXISTS poll_room_vote (
-        question_index INTEGER NOT NULL,
-        voter_id TEXT NOT NULL,
-        option_ids TEXT NOT NULL,
-        PRIMARY KEY (question_index, voter_id)
-      )
-    `;
+  private persistCurrentQuestionIndex() {
+    const db = this.getDb();
+    db.insert(schema.pollRoomMeta)
+      .values({ key: "currentQuestionIndex", value: String(this.currentQuestionIndex) })
+      .onConflictDoUpdate({
+        target: schema.pollRoomMeta.key,
+        set: { value: String(this.currentQuestionIndex) },
+      })
+      .run();
   }
 
-  private async persistCurrentQuestionIndex() {
-    this.sql`
-      INSERT INTO poll_room_meta (key, value)
-      VALUES ('currentQuestionIndex', ${String(this.currentQuestionIndex)})
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `;
+  private persistPhase(questionIndex: number, phase: PollPhase) {
+    const db = this.getDb();
+    db.insert(schema.pollRoomPhase)
+      .values({ questionIndex, phase })
+      .onConflictDoUpdate({
+        target: schema.pollRoomPhase.questionIndex,
+        set: { phase },
+      })
+      .run();
   }
 
-  private async persistPhase(questionIndex: number, phase: PollPhase) {
-    this.sql`
-      INSERT INTO poll_room_phase (question_index, phase)
-      VALUES (${questionIndex}, ${phase})
-      ON CONFLICT(question_index) DO UPDATE SET phase = excluded.phase
-    `;
-  }
-
-  private async persistVote(questionIndex: number, voterId: string, optionIds: string[]) {
+  private persistVote(questionIndex: number, voterId: string, optionIds: string[]) {
+    const db = this.getDb();
     if (optionIds.length === 0) {
-      this.sql`
-        DELETE FROM poll_room_vote
-        WHERE question_index = ${questionIndex} AND voter_id = ${voterId}
-      `;
+      db.delete(schema.pollRoomVote)
+        .where(
+          and(
+            eq(schema.pollRoomVote.questionIndex, questionIndex),
+            eq(schema.pollRoomVote.voterId, voterId)
+          )
+        )
+        .run();
       return;
     }
-    this.sql`
-      INSERT INTO poll_room_vote (question_index, voter_id, option_ids)
-      VALUES (${questionIndex}, ${voterId}, ${JSON.stringify(optionIds)})
-      ON CONFLICT(question_index, voter_id)
-      DO UPDATE SET option_ids = excluded.option_ids
-    `;
+    db.insert(schema.pollRoomVote)
+      .values({ questionIndex, voterId, optionIds: JSON.stringify(optionIds) })
+      .onConflictDoUpdate({
+        target: [schema.pollRoomVote.questionIndex, schema.pollRoomVote.voterId],
+        set: { optionIds: JSON.stringify(optionIds) },
+      })
+      .run();
   }
 
-  private async clearPersistedState() {
-    this.sql`DELETE FROM poll_room_vote`;
-    this.sql`DELETE FROM poll_room_phase`;
-    this.sql`DELETE FROM poll_room_meta`;
+  private clearPersistedState() {
+    const db = this.getDb();
+    db.delete(schema.pollRoomVote).run();
+    db.delete(schema.pollRoomPhase).run();
+    db.delete(schema.pollRoomMeta).run();
   }
+
+  // ── Validation ────────────────────────────────────────────────
 
   private validateChoiceSelection(
     question: Extract<PollQuestion, { kind: "choice" }>,
@@ -722,6 +737,8 @@ export class PollRoom extends Server<Env> {
     return { ok: true, value };
   }
 }
+
+// ── Pure helpers ───────────────────────────────────────────────
 
 function toPublicQuestion(question: PollQuestion): PollQuestionPublic {
   if (question.kind === "choice") {
