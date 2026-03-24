@@ -1,24 +1,24 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "partyserver-live-polls",
+  "name": "syn-hole",
   "main": "src/server.ts",
   "compatibility_date": "2026-03-24",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "HOST_KEY": "change-me"
+    "HOST_KEY": "change-me",
   },
   "durable_objects": {
     "bindings": [
       {
         "name": "PollRoom",
-        "class_name": "PollRoom"
-      }
-    ]
+        "class_name": "PollRoom",
+      },
+    ],
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["PollRoom"]
-    }
-  ]
+      "new_sqlite_classes": ["PollRoom"],
+    },
+  ],
 }
