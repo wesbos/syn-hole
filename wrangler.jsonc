@@ -4,6 +4,13 @@
   "main": "src/server.ts",
   "compatibility_date": "2026-03-17",
   "compatibility_flags": ["nodejs_compat"],
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/*.sql"],
+      "fallthrough": true,
+    },
+  ],
   "vars": {
     "HOST_KEY": "change-me",
     "ADMIN_KEY": "change-me-admin",
