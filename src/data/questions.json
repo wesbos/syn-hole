@@ -73,5 +73,52 @@
     "max": 500000,
     "step": 1,
     "hideResultsUntilReveal": true
+  },
+  {
+    "kind": "open_ended",
+    "id": "best-js-feature",
+    "prompt": "What is the best JavaScript feature added in the last 5 years?",
+    "hideResultsUntilReveal": false
+  },
+  {
+    "kind": "numeric_scale",
+    "id": "talk-rating-scale",
+    "prompt": "How would you rate this talk so far?",
+    "min": 1,
+    "max": 10,
+    "minLabel": "Needs work",
+    "maxLabel": "Outstanding",
+    "hideResultsUntilReveal": false
+  },
+  {
+    "kind": "draggable_scale",
+    "id": "confidence-slider",
+    "prompt": "How confident are you in your TypeScript skills?",
+    "min": 0,
+    "max": 100,
+    "minLabel": "Beginner",
+    "maxLabel": "Expert",
+    "hideResultsUntilReveal": false
+  },
+  {
+    "kind": "rating",
+    "id": "speaker-rating",
+    "prompt": "Rate the speaker's presentation style",
+    "maxRating": 5,
+    "ratingStyle": "star",
+    "hideResultsUntilReveal": false
+  },
+  {
+    "kind": "ranking",
+    "id": "framework-ranking",
+    "prompt": "Rank these frameworks from most to least favorite",
+    "items": [
+      { "id": "react", "label": "React" },
+      { "id": "vue", "label": "Vue" },
+      { "id": "svelte", "label": "Svelte" },
+      { "id": "angular", "label": "Angular" },
+      { "id": "solid", "label": "Solid" }
+    ],
+    "hideResultsUntilReveal": true
   }
 ]
