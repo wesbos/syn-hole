@@ -643,6 +643,63 @@ button:disabled {
   padding: 1.35rem 0 1.2rem;
 }
 
+.starting-soon-shell {
+  max-width: 1160px;
+  width: calc(100% - 2rem);
+  margin: 0 auto;
+  padding: 1rem 0 0.8rem;
+}
+
+.starting-soon-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 1.45rem;
+  align-items: start;
+}
+
+.starting-soon-main {
+  display: grid;
+  gap: 0.95rem;
+  min-height: 320px;
+  align-content: center;
+}
+
+.starting-soon-kicker {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--text) 70%, transparent);
+}
+
+.starting-soon-title {
+  margin: 0;
+  font-size: clamp(2.6rem, 8vw, 6rem);
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+  text-transform: uppercase;
+}
+
+.starting-soon-lead {
+  margin: 0;
+  font-size: 1rem;
+  max-width: 44ch;
+  color: var(--muted);
+}
+
+.starting-soon-chip {
+  width: fit-content;
+  padding: 0.3rem 0.5rem;
+}
+
+.starting-soon-chip strong {
+  font-size: 1.05rem;
+}
+
+.starting-soon-qr-card {
+  padding: 0.85rem;
+}
+
 .projector-main-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
@@ -949,8 +1006,8 @@ button:disabled {
 
 .audience-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(290px, 340px);
-  gap: 1.6rem;
+  grid-template-columns: 1fr;
+  gap: 1rem;
   align-items: start;
   padding: 0.35rem 0.1rem 0.5rem;
 }
@@ -1881,6 +1938,24 @@ button:disabled {
   .projector-shell {
     width: calc(100% - 1rem);
     padding-top: 0.85rem;
+  }
+
+  .starting-soon-shell {
+    width: calc(100% - 1rem);
+    padding-top: 0.85rem;
+  }
+
+  .starting-soon-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .starting-soon-main {
+    min-height: 0;
+  }
+
+  .starting-soon-title {
+    font-size: clamp(2.2rem, 10vw, 4.4rem);
   }
 
   .projector-main-grid {

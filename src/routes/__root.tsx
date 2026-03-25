@@ -12,13 +12,13 @@ import normalizeCss from "~/normalize.css?url";
 export const Route = createRootRoute({
   head: () => ({
     meta: [
+      { title: "Syntax Live Polls" },
       { charSet: "utf-8" },
       {
         name: "viewport",
         content: "width=device-width, initial-scale=1.0, shrink-to-fit=no",
       },
       { httpEquiv: "X-UA-Compatible", content: "IE=edge" },
-      { name: "title", content: "Syntax Live Polls" },
       {
         name: "description",
         content:
@@ -30,7 +30,7 @@ export const Route = createRootRoute({
     links: [
       { rel: "stylesheet", href: normalizeCss },
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/favicon.ico", sizes: "any" },
+      { rel: "icon", href: "https://syntax.fm/favicon.ico", sizes: "any" },
     ],
   }),
   shellComponent: RootDocument,

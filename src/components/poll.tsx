@@ -12,7 +12,6 @@ import {
   MoreVertical,
   Maximize2,
   Rocket,
-  Settings,
   Users,
 } from "lucide-react";
 import type {
@@ -186,6 +185,10 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
 
   const question = stateMessage?.question ?? null;
   const roomLinks = useMemo(() => getRoomLinks(room, hostKey.trim()), [room, hostKey]);
+  const showStartingSoon =
+    stateMessage !== null &&
+    stateMessage.currentQuestionIndex === 0 &&
+    stateMessage.phase === "idle";
 
   function sendMessage(message: IncomingMessage) {
     if (socket.readyState !== WebSocket.OPEN) {
@@ -295,15 +298,19 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
       ) : null}
 
       {stateMessage && view === "audience" ? (
-        <AudienceView
-          stateMessage={stateMessage}
-          selectedOptionIds={selectedOptionIds}
-          onToggleOption={onAudienceOptionToggle}
-          numberGuessInput={numberGuessInput}
-          numberGuessError={numberGuessError}
-          onNumberGuessInputChange={onNumberGuessInputChange}
-          onSubmitNumberGuess={submitNumberGuess}
-        />
+        showStartingSoon ? (
+          <StartingSoonView stateMessage={stateMessage} audienceUrl={roomLinks.audience} />
+        ) : (
+          <AudienceView
+            stateMessage={stateMessage}
+            selectedOptionIds={selectedOptionIds}
+            onToggleOption={onAudienceOptionToggle}
+            numberGuessInput={numberGuessInput}
+            numberGuessError={numberGuessError}
+            onNumberGuessInputChange={onNumberGuessInputChange}
+            onSubmitNumberGuess={submitNumberGuess}
+          />
+        )
       ) : null}
 
       {stateMessage && view === "host" ? (
@@ -318,7 +325,11 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
       ) : null}
 
       {stateMessage && view === "projector" ? (
-        <ProjectorView stateMessage={stateMessage} room={room} />
+        showStartingSoon ? (
+          <StartingSoonView stateMessage={stateMessage} audienceUrl={roomLinks.audience} />
+        ) : (
+          <ProjectorView stateMessage={stateMessage} audienceUrl={roomLinks.audience} />
+        )
       ) : null}
 
       <footer className="app-bottom-bar">
@@ -452,6 +463,39 @@ function AudienceView(props: {
   );
 }
 
+function StartingSoonView(props: {
+  stateMessage: Extract<OutgoingMessage, { type: "state" }>;
+  audienceUrl: string;
+}) {
+  const { stateMessage, audienceUrl } = props;
+  const { qrUrl, shortLink } = getAudienceQrDetails(audienceUrl);
+  return (
+    <section className="starting-soon-shell">
+      <div className="starting-soon-grid">
+        <div className="panel starting-soon-main">
+          <span className="starting-soon-kicker">Room is warming up</span>
+          <h2 className="starting-soon-title">Starting Soon</h2>
+          <p className="starting-soon-lead">
+            The host will open the first question shortly. Scan the QR to join now.
+          </p>
+          <span className="live-chip live-chip-connected starting-soon-chip">
+            <Users size={13} strokeWidth={2} aria-hidden />
+            <strong>{stateMessage.participants}</strong>
+            <small>Users currently in this room</small>
+          </span>
+        </div>
+        <aside className="projector-side">
+          <div className="projector-qr-card starting-soon-qr-card">
+            <img src={qrUrl} alt="Audience join QR code" className="projector-qr-image" />
+            <p className="projector-qr-label">Join via QR or visit</p>
+            <p className="projector-qr-link">{shortLink}</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 function HostView(props: {
   stateMessage: Extract<OutgoingMessage, { type: "state" }>;
   sendMessage: (message: IncomingMessage) => void;
@@ -477,7 +521,6 @@ function HostView(props: {
   const [copiedLink, setCopiedLink] = useState<"audience" | "projector" | "host" | null>(
     null
   );
-  const [showManual, setShowManual] = useState(false);
 
   function runSmartNext() {
     switch (smartNextAction) {
@@ -554,14 +597,6 @@ function HostView(props: {
               <Lock size={14} strokeWidth={2} aria-hidden />
               Lock Room
             </button>
-            <button
-              type="button"
-              className="host-primary-btn"
-              onClick={() => setShowManual((current) => !current)}
-            >
-              <Settings size={14} strokeWidth={2} aria-hidden />
-              Settings
-            </button>
           </div>
         </section>
 
@@ -609,22 +644,20 @@ function HostView(props: {
             <Rocket size={15} strokeWidth={2} aria-hidden />
           </button>
 
-          {showManual ? (
-            <div className="host-manual-row">
-              <button onClick={() => sendMessage({ type: "open-voting" })} disabled={!canControl}>
-                Open
-              </button>
-              <button onClick={() => sendMessage({ type: "close-voting" })} disabled={!canControl}>
-                Close
-              </button>
-              <button onClick={() => sendMessage({ type: "reveal" })} disabled={!canControl}>
-                Reveal
-              </button>
-              <button onClick={() => sendMessage({ type: "reset-session" })} disabled={!canControl}>
-                Reset
-              </button>
-            </div>
-          ) : null}
+          <div className="host-manual-row">
+            <button onClick={() => sendMessage({ type: "open-voting" })} disabled={!canControl}>
+              Open
+            </button>
+            <button onClick={() => sendMessage({ type: "close-voting" })} disabled={!canControl}>
+              Close
+            </button>
+            <button onClick={() => sendMessage({ type: "reveal" })} disabled={!canControl}>
+              Reveal
+            </button>
+            <button onClick={() => sendMessage({ type: "reset-session" })} disabled={!canControl}>
+              Reset
+            </button>
+          </div>
         </section>
 
         <section className="panel nested-panel share-links-panel">
@@ -755,9 +788,9 @@ function HostView(props: {
 
 function ProjectorView(props: {
   stateMessage: Extract<OutgoingMessage, { type: "state" }>;
-  room: string;
+  audienceUrl: string;
 }) {
-  const { stateMessage, room } = props;
+  const { stateMessage, audienceUrl } = props;
   const question = stateMessage.question;
 
   if (!question) {
@@ -769,15 +802,7 @@ function ProjectorView(props: {
     );
   }
 
-  const audienceUrl =
-    typeof window === "undefined"
-      ? `/r/${encodeURIComponent(room)}`
-      : new URL(`/r/${encodeURIComponent(room)}`, window.location.origin).toString();
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(audienceUrl)}`;
-  const shortLink =
-    typeof window === "undefined"
-      ? audienceUrl
-      : `${window.location.host}${new URL(audienceUrl).pathname}`;
+  const { qrUrl, shortLink } = getAudienceQrDetails(audienceUrl);
 
   return (
     <section className="projector-shell">
@@ -844,7 +869,7 @@ function ProjectorChoiceResults(props: {
           <div className="projector-bar-row" key={option.id}>
             <div className="projector-bar-topline">
               <span>{option.label}</span>
-              <span>{showResults ? `${percent}%` : "--"}</span>
+              <span>{showResults ? `${percent}% (${votes})` : "--"}</span>
             </div>
             <div className="projector-bar-track">
               <div
@@ -1155,6 +1180,22 @@ function getRoomLinks(room: string, hostKey: string) {
     audience: `${base}${roomPath}`,
     projector: `${base}${roomPath}/screen`,
     host: hostUrl.toString(),
+  };
+}
+
+function getAudienceQrDetails(audienceUrl: string): { qrUrl: string; shortLink: string } {
+  const resolvedAudienceUrl =
+    typeof window === "undefined"
+      ? audienceUrl
+      : new URL(audienceUrl, window.location.origin).toString();
+  return {
+    qrUrl: `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(
+      resolvedAudienceUrl
+    )}`,
+    shortLink:
+      typeof window === "undefined"
+        ? audienceUrl
+        : `${window.location.host}${new URL(resolvedAudienceUrl).pathname}`,
   };
 }
 
