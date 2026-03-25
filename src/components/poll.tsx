@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 import usePartySocket from "partysocket/react";
 import {
   CheckCircle2,
@@ -31,6 +31,9 @@ const DEFAULT_ROOM = "main-stage";
 const VOTER_STORAGE_KEY = "syntax-live-poll-voter-id";
 const AUDIENCE_NAME_STORAGE_KEY = "syntax-live-audience-name";
 const HOST_KEY_STORAGE_KEY = "syntax-live-host-key";
+const QUESTION_CROSS_SLIDE_MS = 320;
+
+type StateMessage = Extract<OutgoingMessage, { type: "state" }>;
 
 const phaseLabel: Record<string, string> = {
   idle: "Waiting to open voting",
@@ -185,6 +188,10 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
 
   const question = stateMessage?.question ?? null;
   const roomLinks = useMemo(() => getRoomLinks(room, hostKey.trim()), [room, hostKey]);
+  const projectorFooterUrl = useMemo(
+    () => (view === "projector" ? getAudienceQrDetails(roomLinks.audience).shortLink : ""),
+    [roomLinks.audience, view]
+  );
   const showStartingSoon =
     stateMessage !== null &&
     stateMessage.currentQuestionIndex === 0 &&
@@ -299,7 +306,7 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
 
       {stateMessage && view === "audience" ? (
         showStartingSoon ? (
-          <StartingSoonView stateMessage={stateMessage} audienceUrl={roomLinks.audience} />
+          <StartingSoonView stateMessage={stateMessage} audienceUrl={roomLinks.audience} room={room} />
         ) : (
           <AudienceView
             stateMessage={stateMessage}
@@ -326,7 +333,7 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
 
       {stateMessage && view === "projector" ? (
         showStartingSoon ? (
-          <StartingSoonView stateMessage={stateMessage} audienceUrl={roomLinks.audience} />
+          <StartingSoonView stateMessage={stateMessage} audienceUrl={roomLinks.audience} room={room} />
         ) : (
           <ProjectorView stateMessage={stateMessage} audienceUrl={roomLinks.audience} />
         )
@@ -338,8 +345,11 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
           <span>Room: {room}</span>
           <span>Role: {view}</span>
           <span className="app-bottom-status">Status: {status}</span>
-          <span>Phase: {phaseLabel[stateMessage?.phase ?? "idle"] ?? "unknown"}</span>
           {showDebug ? <span>debug</span> : null}
+          <span>Phase: {phaseLabel[stateMessage?.phase ?? "idle"] ?? "unknown"}</span>
+          {view === "projector" ? (
+            <span className="projector-footer-url">{projectorFooterUrl}</span>
+          ) : null}
         </div>
       </footer>
     </main>
@@ -347,7 +357,7 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
 }
 
 function AudienceView(props: {
-  stateMessage: Extract<OutgoingMessage, { type: "state" }>;
+  stateMessage: StateMessage;
   selectedOptionIds: string[];
   onToggleOption: (optionId: string) => void;
   numberGuessInput: string;
@@ -364,7 +374,9 @@ function AudienceView(props: {
     onNumberGuessInputChange,
     onSubmitNumberGuess,
   } = props;
-  const question = stateMessage.question;
+  const { displayedStateMessage, outgoingStateMessage, isAnimating } =
+    useQuestionCrossSlideTransition(stateMessage);
+  const question = displayedStateMessage.question;
   if (!question) {
     return (
       <section className="panel audience-panel">
@@ -374,8 +386,76 @@ function AudienceView(props: {
     );
   }
 
+  const incoming = (
+    <AudienceContent
+      stateMessage={displayedStateMessage}
+      selectedOptionIds={selectedOptionIds}
+      onToggleOption={onToggleOption}
+      numberGuessInput={numberGuessInput}
+      numberGuessError={numberGuessError}
+      onNumberGuessInputChange={onNumberGuessInputChange}
+      onSubmitNumberGuess={onSubmitNumberGuess}
+      interactive
+    />
+  );
+  const outgoing =
+    isAnimating && outgoingStateMessage?.question ? (
+      <AudienceContent
+        stateMessage={outgoingStateMessage}
+        selectedOptionIds={outgoingStateMessage.yourVoteOptionIds}
+        onToggleOption={onToggleOption}
+        numberGuessInput={
+          outgoingStateMessage.yourNumberGuess !== null ? String(outgoingStateMessage.yourNumberGuess) : ""
+        }
+        numberGuessError={null}
+        onNumberGuessInputChange={onNumberGuessInputChange}
+        onSubmitNumberGuess={onSubmitNumberGuess}
+        interactive={false}
+      />
+    ) : null;
+
+  return (
+    <QuestionTransitionSlot
+      className=""
+      incoming={incoming}
+      outgoing={outgoing}
+      isAnimating={isAnimating}
+    />
+  );
+}
+
+function AudienceContent(props: {
+  stateMessage: StateMessage;
+  selectedOptionIds: string[];
+  onToggleOption: (optionId: string) => void;
+  numberGuessInput: string;
+  numberGuessError: string | null;
+  onNumberGuessInputChange: (value: string) => void;
+  onSubmitNumberGuess: () => void;
+  interactive: boolean;
+}) {
+  const {
+    stateMessage,
+    selectedOptionIds,
+    onToggleOption,
+    numberGuessInput,
+    numberGuessError,
+    onNumberGuessInputChange,
+    onSubmitNumberGuess,
+    interactive,
+  } = props;
+  const question = stateMessage.question;
+  if (!question) return null;
+
   const votingOpen = stateMessage.phase === "open";
   const revealChoice = stateMessage.reveal?.kind === "choice" ? stateMessage.reveal : null;
+  const canInteract = interactive && votingOpen;
+  const resolvedNumberGuessInput =
+    interactive || question.kind !== "number"
+      ? numberGuessInput
+      : stateMessage.yourNumberGuess !== null
+        ? String(stateMessage.yourNumberGuess)
+        : "";
 
   if (question.kind === "number") {
     return (
@@ -388,9 +468,7 @@ function AudienceView(props: {
             <span className={`audience-live-dot ${votingOpen ? "is-live" : ""}`}>
               {votingOpen ? "Live" : "Waiting"}
             </span>
-            <span className="audience-answered-pill">
-              {stateMessage.totalResponses} answered
-            </span>
+            <span className="audience-answered-pill">{stateMessage.totalResponses} answered</span>
           </div>
           <h2 className="audience-hero">{question.prompt}</h2>
         </div>
@@ -404,16 +482,23 @@ function AudienceView(props: {
                 min={question.min}
                 max={question.max}
                 step={question.step ?? 1}
-                value={numberGuessInput}
-                onChange={(event) => onNumberGuessInputChange(event.currentTarget.value)}
+                value={resolvedNumberGuessInput}
+                onChange={(event) => {
+                  if (!interactive) return;
+                  onNumberGuessInputChange(event.currentTarget.value);
+                }}
                 placeholder="Enter your guess"
-                disabled={!votingOpen}
+                disabled={!canInteract}
               />
-              <button type="button" onClick={onSubmitNumberGuess} disabled={!votingOpen}>
+              <button
+                type="button"
+                onClick={interactive ? onSubmitNumberGuess : undefined}
+                disabled={!canInteract}
+              >
                 Save guess
               </button>
             </div>
-            {numberGuessError ? <p className="error">{numberGuessError}</p> : null}
+            {interactive && numberGuessError ? <p className="error">{numberGuessError}</p> : null}
             <NumberResults
               question={question}
               reveal={stateMessage.reveal}
@@ -437,9 +522,7 @@ function AudienceView(props: {
           <span className={`audience-live-dot ${votingOpen ? "is-live" : ""}`}>
             {votingOpen ? "Live" : "Closed"}
           </span>
-          <span className="audience-answered-pill">
-            {stateMessage.totalResponses} answered
-          </span>
+          <span className="audience-answered-pill">{stateMessage.totalResponses} answered</span>
         </div>
         <h2 className="audience-hero">{renderAudiencePrompt(question.prompt)}</h2>
       </div>
@@ -452,12 +535,10 @@ function AudienceView(props: {
           selectedOptionIds={selectedOptionIds}
           revealCorrectOptionIds={revealChoice?.correctOptionIds ?? []}
           showResults={stateMessage.resultsVisible}
-          canInteract={votingOpen}
+          canInteract={canInteract}
           onToggleOption={onToggleOption}
         />
-        <div className="audience-total-card">
-          {stateMessage.totalResponses} total answers submitted
-        </div>
+        <div className="audience-total-card">{stateMessage.totalResponses} total answers submitted</div>
       </div>
     </section>
   );
@@ -466,9 +547,11 @@ function AudienceView(props: {
 function StartingSoonView(props: {
   stateMessage: Extract<OutgoingMessage, { type: "state" }>;
   audienceUrl: string;
+  room: string;
 }) {
-  const { stateMessage, audienceUrl } = props;
+  const { stateMessage, audienceUrl, room } = props;
   const { qrUrl, shortLink } = getAudienceQrDetails(audienceUrl);
+  const rootDomain = getRootDomain(audienceUrl);
   return (
     <section className="starting-soon-shell">
       <div className="starting-soon-grid">
@@ -478,6 +561,16 @@ function StartingSoonView(props: {
           <p className="starting-soon-lead">
             The host will open the first question shortly. Scan the QR to join now.
           </p>
+          <div className="starting-soon-cta" aria-live="polite">
+            <p className="starting-soon-cta-line">
+              <span>Go to</span>
+              <strong>{rootDomain}</strong>
+            </p>
+            <p className="starting-soon-cta-line starting-soon-cta-code">
+              <span>Enter code</span>
+              <strong>{room}</strong>
+            </p>
+          </div>
           <span className="live-chip live-chip-connected starting-soon-chip">
             <Users size={13} strokeWidth={2} aria-hidden />
             <strong>{stateMessage.participants}</strong>
@@ -787,11 +880,13 @@ function HostView(props: {
 }
 
 function ProjectorView(props: {
-  stateMessage: Extract<OutgoingMessage, { type: "state" }>;
+  stateMessage: StateMessage;
   audienceUrl: string;
 }) {
   const { stateMessage, audienceUrl } = props;
-  const question = stateMessage.question;
+  const { displayedStateMessage, outgoingStateMessage, isAnimating } =
+    useQuestionCrossSlideTransition(stateMessage);
+  const question = displayedStateMessage.question;
 
   if (!question) {
     return (
@@ -803,38 +898,28 @@ function ProjectorView(props: {
   }
 
   const { qrUrl, shortLink } = getAudienceQrDetails(audienceUrl);
+  const outgoingQuestion = outgoingStateMessage?.question;
 
   return (
     <section className="projector-shell">
-      <div className="projector-head">
-        <div className="projector-meta-row">
-          <span className="projector-kicker">Current Question</span>
-          <span className="projector-answered-pill">
-            {stateMessage.totalResponses} answered
-          </span>
-        </div>
-        <h2 className="projector-title">{question.prompt}</h2>
-      </div>
+      <QuestionTransitionSlot
+        className="projector-head"
+        isAnimating={isAnimating}
+        incoming={<ProjectorHeadContent stateMessage={displayedStateMessage} />}
+        outgoing={
+          outgoingQuestion ? <ProjectorHeadContent stateMessage={outgoingStateMessage} /> : null
+        }
+      />
 
       <div className="projector-main-grid">
-        <div className="projector-main-left">
-          {question.kind === "number" ? (
-            <NumberResults
-              question={question}
-              reveal={stateMessage.reveal}
-              totalResponses={stateMessage.totalResponses}
-              showResults={stateMessage.resultsVisible}
-              yourNumberGuess={null}
-            />
-          ) : (
-            <ProjectorChoiceResults
-              question={question}
-              voteCounts={stateMessage.voteCounts}
-              totalResponses={stateMessage.totalResponses}
-              showResults={stateMessage.resultsVisible}
-            />
-          )}
-        </div>
+        <QuestionTransitionSlot
+          className="projector-main-left"
+          isAnimating={isAnimating}
+          incoming={<ProjectorMainContent stateMessage={displayedStateMessage} />}
+          outgoing={
+            outgoingQuestion ? <ProjectorMainContent stateMessage={outgoingStateMessage} /> : null
+          }
+        />
 
         <aside className="projector-side">
           <div className="projector-qr-card">
@@ -848,13 +933,74 @@ function ProjectorView(props: {
   );
 }
 
+function ProjectorHeadContent(props: { stateMessage: StateMessage }) {
+  const { stateMessage } = props;
+  const question = stateMessage.question;
+  if (!question) return null;
+  return (
+    <>
+      <div className="projector-meta-row">
+        <span className="projector-kicker">Current Question</span>
+        <span className="projector-answered-pill">{stateMessage.totalResponses} answered</span>
+      </div>
+      <h2 className="projector-title">{question.prompt}</h2>
+    </>
+  );
+}
+
+function ProjectorMainContent(props: { stateMessage: StateMessage }) {
+  const { stateMessage } = props;
+  const question = stateMessage.question;
+  if (!question) return null;
+  const revealChoice = stateMessage.reveal?.kind === "choice" ? stateMessage.reveal : null;
+  return question.kind === "number" ? (
+    <NumberResults
+      question={question}
+      reveal={stateMessage.reveal}
+      totalResponses={stateMessage.totalResponses}
+      showResults={stateMessage.resultsVisible}
+      yourNumberGuess={null}
+    />
+  ) : (
+    <ProjectorChoiceResults
+      question={question}
+      voteCounts={stateMessage.voteCounts}
+      totalResponses={stateMessage.totalResponses}
+      showResults={stateMessage.resultsVisible}
+      revealCorrectOptionIds={revealChoice?.correctOptionIds ?? []}
+    />
+  );
+}
+
+function QuestionTransitionSlot(props: {
+  className: string;
+  isAnimating: boolean;
+  incoming: ReactNode;
+  outgoing: ReactNode | null;
+}) {
+  const { className, isAnimating, incoming, outgoing } = props;
+  if (!isAnimating || !outgoing) {
+    if (className.trim().length === 0) return <>{incoming}</>;
+    return <div className={className}>{incoming}</div>;
+  }
+  const stackClassName =
+    className.trim().length > 0 ? `${className} question-transition-stack` : "question-transition-stack";
+  return (
+    <div className={stackClassName}>
+      <div className="question-transition-layer question-transition-layer-out">{outgoing}</div>
+      <div className="question-transition-layer question-transition-layer-in">{incoming}</div>
+    </div>
+  );
+}
+
 function ProjectorChoiceResults(props: {
   question: PollChoiceQuestionPublic | PollChoiceQuestion;
   voteCounts: Record<string, number>;
   totalResponses: number;
   showResults: boolean;
+  revealCorrectOptionIds: string[];
 }) {
-  const { question, voteCounts, totalResponses, showResults } = props;
+  const { question, voteCounts, totalResponses, showResults, revealCorrectOptionIds } = props;
   const denominator = Math.max(1, totalResponses);
   const maxVotes = Math.max(...question.options.map((option) => voteCounts[option.id] ?? 0), 0);
 
@@ -864,11 +1010,12 @@ function ProjectorChoiceResults(props: {
         const votes = voteCounts[option.id] ?? 0;
         const percent = showResults ? Math.round((votes / denominator) * 100) : 0;
         const isLeading = votes > 0 && votes === maxVotes;
+        const isWinner = revealCorrectOptionIds.includes(option.id);
 
         return (
           <div className="projector-bar-row" key={option.id}>
             <div className="projector-bar-topline">
-              <span>{option.label}</span>
+              <span className={`projector-bar-label ${isWinner ? "is-correct" : ""}`}>{option.label}</span>
               <span>{showResults ? `${percent}% (${votes})` : "--"}</span>
             </div>
             <div className="projector-bar-track">
@@ -1197,6 +1344,73 @@ function getAudienceQrDetails(audienceUrl: string): { qrUrl: string; shortLink: 
         ? audienceUrl
         : `${window.location.host}${new URL(resolvedAudienceUrl).pathname}`,
   };
+}
+
+function getRootDomain(audienceUrl: string): string {
+  if (typeof window !== "undefined") return window.location.host;
+  try {
+    return new URL(audienceUrl).host;
+  } catch {
+    return "your-domain.com";
+  }
+}
+
+function useQuestionCrossSlideTransition(stateMessage: StateMessage): {
+  displayedStateMessage: StateMessage;
+  outgoingStateMessage: StateMessage | null;
+  isAnimating: boolean;
+} {
+  const [displayedStateMessage, setDisplayedStateMessage] = useState(stateMessage);
+  const [outgoingStateMessage, setOutgoingStateMessage] = useState<StateMessage | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const displayedStateMessageRef = useRef(stateMessage);
+  const animationTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (animationTimerRef.current !== null) {
+        window.clearTimeout(animationTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const nextQuestionId = stateMessage.question?.id ?? null;
+    const currentQuestionId = displayedStateMessageRef.current.question?.id ?? null;
+
+    if (nextQuestionId === currentQuestionId) {
+      displayedStateMessageRef.current = stateMessage;
+      setDisplayedStateMessage(stateMessage);
+      return;
+    }
+
+    const previousDisplayedState = displayedStateMessageRef.current;
+    displayedStateMessageRef.current = stateMessage;
+    setDisplayedStateMessage(stateMessage);
+
+    if (animationTimerRef.current !== null) {
+      window.clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
+
+    const shouldAnimate =
+      previousDisplayedState.question !== null && stateMessage.question !== null;
+    if (!shouldAnimate) {
+      setOutgoingStateMessage(null);
+      setIsAnimating(false);
+      return;
+    }
+
+    setOutgoingStateMessage(previousDisplayedState);
+    setIsAnimating(true);
+    animationTimerRef.current = window.setTimeout(() => {
+      setIsAnimating(false);
+      setOutgoingStateMessage(null);
+      animationTimerRef.current = null;
+    }, QUESTION_CROSS_SLIDE_MS);
+  }, [stateMessage]);
+
+  return { displayedStateMessage, outgoingStateMessage, isAnimating };
 }
 
 type SmartNextAction = "open" | "close" | "reveal" | "switch" | "none";
