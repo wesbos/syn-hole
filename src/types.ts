@@ -77,6 +77,42 @@ export type PollRankingQuestion = {
   hideResultsUntilReveal?: boolean;
 };
 
+export type PollQuizQuestion = {
+  kind: "quiz";
+  id: string;
+  prompt: string;
+  options: PollOption[];
+  correctOptionIds: string[];
+  allowMultiple: boolean;
+  hideResultsUntilReveal?: boolean;
+};
+
+export type PollAssessmentQuestion = {
+  kind: "assessment";
+  id: string;
+  prompt: string;
+  options: PollOption[];
+  correctOptionIds: string[];
+  allowMultiple: boolean;
+  hideResultsUntilReveal?: boolean;
+};
+
+export type PollSurveyQuestion = {
+  kind: "survey";
+  id: string;
+  prompt: string;
+  surveyQuestions: SurveySubQuestion[];
+  hideResultsUntilReveal?: boolean;
+};
+
+export type SurveySubQuestion = {
+  id: string;
+  prompt: string;
+  type: "choice" | "text";
+  options?: PollOption[];
+  allowMultiple?: boolean;
+};
+
 export type PollQuestion =
   | PollChoiceQuestion
   | PollNumberQuestion
@@ -84,7 +120,10 @@ export type PollQuestion =
   | PollNumericScaleQuestion
   | PollDraggableScaleQuestion
   | PollRatingQuestion
-  | PollRankingQuestion;
+  | PollRankingQuestion
+  | PollQuizQuestion
+  | PollAssessmentQuestion
+  | PollSurveyQuestion;
 
 // ── Public versions (strip correct answers) ──────────────────────
 
@@ -95,6 +134,9 @@ export type PollNumericScaleQuestionPublic = PollNumericScaleQuestion;
 export type PollDraggableScaleQuestionPublic = PollDraggableScaleQuestion;
 export type PollRatingQuestionPublic = PollRatingQuestion;
 export type PollRankingQuestionPublic = PollRankingQuestion;
+export type PollQuizQuestionPublic = Omit<PollQuizQuestion, "correctOptionIds">;
+export type PollAssessmentQuestionPublic = Omit<PollAssessmentQuestion, "correctOptionIds">;
+export type PollSurveyQuestionPublic = PollSurveyQuestion;
 
 export type PollQuestionPublic =
   | PollChoiceQuestionPublic
@@ -103,7 +145,10 @@ export type PollQuestionPublic =
   | PollNumericScaleQuestionPublic
   | PollDraggableScaleQuestionPublic
   | PollRatingQuestionPublic
-  | PollRankingQuestionPublic;
+  | PollRankingQuestionPublic
+  | PollQuizQuestionPublic
+  | PollAssessmentQuestionPublic
+  | PollSurveyQuestionPublic;
 
 // ── Vote counts ──────────────────────────────────────────────────
 
@@ -146,6 +191,15 @@ export type ReactionBurst = {
   count: number;
 };
 
+// ── Leaderboard types ────────────────────────────────────────────
+
+export type LeaderboardEntry = {
+  voterId: string;
+  displayName: string;
+  answered: number;
+  correct: number;
+};
+
 // ── Messages ─────────────────────────────────────────────────────
 
 export type IncomingMessage =
@@ -174,7 +228,7 @@ export type IncomingMessage =
   // Reactions
   | { type: "submit-reaction"; emoji: string }
   // Survey
-  | { type: "submit-survey"; surveyId: string; responses: Record<number, string> };
+  | { type: "submit-survey"; responses: Record<string, string | string[]> };
 
 export type OutgoingMessage =
   | {
@@ -231,6 +285,8 @@ export type OutgoingMessage =
       scaleDistribution: Record<number, number> | null;
       averageRating: number | null;
       rankingResults: RankingResult[] | null;
+      leaderboard: LeaderboardEntry[] | null;
+      surveyResults: SurveyResults | null;
     }
   | {
       type: "error";
@@ -250,9 +306,22 @@ export type OpenEndedEntry = {
 
 export type SurveyState = {
   surveyId: string;
-  questions: PollQuestionPublic[];
+  questions: SurveySubQuestion[];
   totalCompletions: number;
   yourCompleted: boolean;
+  yourResponses: Record<string, string | string[]>;
+};
+
+export type SurveyResults = {
+  surveyId: string;
+  totalCompletions: number;
+  questionResults: Array<{
+    questionId: string;
+    prompt: string;
+    type: "choice" | "text";
+    choiceCounts?: Record<string, number>;
+    textResponses?: string[];
+  }>;
 };
 
 // ── Ranking result ───────────────────────────────────────────────

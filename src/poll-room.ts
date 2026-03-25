@@ -7,6 +7,7 @@ import type { AppDb } from "./db";
 import type {
   ChatMessage,
   IncomingMessage,
+  LeaderboardEntry,
   OpenEndedEntry,
   OutgoingMessage,
   PollPhase,
@@ -16,6 +17,7 @@ import type {
   QnAQuestion,
   RankingResult,
   ReactionBurst,
+  SurveyResults,
   SurveyState,
   VoteCounts,
   WordCloudWord,
@@ -59,6 +61,10 @@ export class PollRoom extends Server<Env> {
   private scaleByQuestion = new Map<number, Map<string, number>>();
   // Ranking per question index: voterId → ranking array
   private rankingByQuestion = new Map<number, Map<string, string[]>>();
+  // Survey responses per question index: voterId → { subQuestionId → response }
+  private surveyByQuestion = new Map<number, Map<string, Record<string, string | string[]>>>();
+  // Voter display names for leaderboard
+  private voterNames = new Map<string, string>();
 
   private getDb(): AppDb {
     if (!this.db) {
@@ -126,6 +132,7 @@ export class PollRoom extends Server<Env> {
       this.openEndedByQuestion.clear();
       this.scaleByQuestion.clear();
       this.rankingByQuestion.clear();
+      this.surveyByQuestion.clear();
       this.qnaQuestions = [];
       this.qnaUpvotes.clear();
       this.chatMessages = [];
@@ -152,6 +159,9 @@ export class PollRoom extends Server<Env> {
       role === "audience" ? sanitizeAudienceName(url.searchParams.get("name")) : null;
 
     conn.setState({ role, voterId, displayName });
+    if (voterId && displayName) {
+      this.voterNames.set(voterId, displayName);
+    }
     this.broadcastState();
   }
 
@@ -215,7 +225,7 @@ export class PollRoom extends Server<Env> {
         this.handleReactionSubmit(conn, incoming.emoji);
         return;
       case "submit-survey":
-        // Survey responses tracked per-question as votes
+        this.handleSurveySubmit(conn, incoming.responses);
         return;
       default:
         this.handleHostCommand(incoming as Exclude<IncomingMessage, { type: "vote" | "vote-number" | "vote-scale" | "vote-rating" | "vote-ranking" | "submit-open-ended" | "vote-open-ended" | "submit-qna" | "upvote-qna" | "mark-answered" | "send-chat" | "submit-word" | "submit-reaction" | "submit-survey" }>);
@@ -253,11 +263,11 @@ export class PollRoom extends Server<Env> {
       this.sendError(conn, "Unable to register vote for current question.");
       return;
     }
-    if (question.kind !== "choice") {
+    if (question.kind !== "choice" && question.kind !== "quiz" && question.kind !== "assessment") {
       this.sendError(conn, "This question expects a different input type.");
       return;
     }
-    const validated = this.validateChoiceSelection(question, optionIds);
+    const validated = this.validateChoiceSelection(question as Extract<PollQuestion, { kind: "choice" }>, optionIds);
     if (validated.ok === false) {
       this.sendError(conn, validated.message);
       return;
@@ -635,6 +645,57 @@ export class PollRoom extends Server<Env> {
     this.broadcastState();
   }
 
+  // ── Survey handler ─────────────────────────────────────────────
+
+  private handleSurveySubmit(conn: Connection<PollConnectionState>, responses: Record<string, string | string[]>) {
+    if (conn.state?.role !== "audience" || !conn.state.voterId) {
+      this.sendError(conn, "Only audience clients can submit surveys.");
+      return;
+    }
+    const phase = this.getCurrentPhase();
+    if (phase !== "open") {
+      this.sendError(conn, "Survey is currently closed.");
+      return;
+    }
+    const question = this.getCurrentQuestion();
+    if (!question || question.kind !== "survey") {
+      this.sendError(conn, "This is not a survey question.");
+      return;
+    }
+
+    // Validate that all required sub-questions are answered
+    const validResponses: Record<string, string | string[]> = {};
+    for (const sq of question.surveyQuestions) {
+      const response = responses[sq.id];
+      if (response === undefined || response === "" || (Array.isArray(response) && response.length === 0)) {
+        this.sendError(conn, `Please answer: ${sq.prompt}`);
+        return;
+      }
+      if (sq.type === "text") {
+        if (typeof response !== "string") {
+          this.sendError(conn, "Invalid response format.");
+          return;
+        }
+        validResponses[sq.id] = response.trim().slice(0, 500);
+      } else {
+        // choice
+        validResponses[sq.id] = Array.isArray(response) ? response : [response];
+      }
+    }
+
+    const surveyMap = this.getSurveyForQuestion(this.currentQuestionIndex);
+    surveyMap.set(conn.state.voterId, validResponses);
+
+    // Persist survey responses
+    this.persistVote(
+      this.currentQuestionIndex,
+      conn.state.voterId,
+      [JSON.stringify(validResponses)]
+    );
+
+    this.broadcastState();
+  }
+
   // ── Host commands ─────────────────────────────────────────────
 
   private handleHostCommand(
@@ -681,6 +742,7 @@ export class PollRoom extends Server<Env> {
         this.openEndedByQuestion.clear();
         this.scaleByQuestion.clear();
         this.rankingByQuestion.clear();
+        this.surveyByQuestion.clear();
         this.qnaQuestions = [];
         this.qnaUpvotes.clear();
         this.chatMessages = [];
@@ -733,7 +795,7 @@ export class PollRoom extends Server<Env> {
       : this.getEmptyVoteCounts(question);
 
     const yourSelection = role === "audience" && voterId ? (votesForQuestion.get(voterId) ?? []) : [];
-    const yourVoteOptionIds = question?.kind === "choice" ? yourSelection : [];
+    const yourVoteOptionIds = (question?.kind === "choice" || question?.kind === "quiz" || question?.kind === "assessment") ? yourSelection : [];
     const yourNumberGuess = question?.kind === "number" ? parseStoredNumberGuess(question, yourSelection) : null;
 
     // Scale/rating
@@ -768,7 +830,7 @@ export class PollRoom extends Server<Env> {
     const winnerResult = question?.kind === "number" ? this.getNumberWinnerResult(question) : null;
     const reveal =
       canRevealCorrect && question
-        ? question.kind === "choice"
+        ? (question.kind === "choice" || question.kind === "quiz" || question.kind === "assessment")
           ? {
               kind: "choice" as const,
               correctOptionIds: [...question.correctOptionIds],
@@ -874,6 +936,34 @@ export class PollRoom extends Server<Env> {
       totalResponses = rankMap?.size ?? 0;
     } else if (question?.kind === "open_ended") {
       totalResponses = oeEntries.length;
+    } else if (question?.kind === "survey") {
+      const surveyMap = this.surveyByQuestion.get(this.currentQuestionIndex);
+      totalResponses = surveyMap?.size ?? 0;
+    }
+
+    // Leaderboard for quiz questions
+    let leaderboard: LeaderboardEntry[] | null = null;
+    const hasQuizQuestions = QUESTIONS.some((q) => q.kind === "quiz");
+    if (hasQuizQuestions && (role === "host" || role === "projector" || (question?.kind === "quiz"))) {
+      leaderboard = this.buildLeaderboard();
+    }
+
+    // Survey state
+    let survey: SurveyState | null = null;
+    let surveyResults: SurveyResults | null = null;
+    if (question?.kind === "survey") {
+      const surveyMap = this.surveyByQuestion.get(this.currentQuestionIndex);
+      const yourResponses = voterId && surveyMap ? (surveyMap.get(voterId) ?? {}) : {};
+      survey = {
+        surveyId: question.id,
+        questions: question.surveyQuestions,
+        totalCompletions: surveyMap?.size ?? 0,
+        yourCompleted: voterId ? (surveyMap?.has(voterId) ?? false) : false,
+        yourResponses,
+      };
+      if (resultsVisible && surveyMap && surveyMap.size > 0) {
+        surveyResults = this.buildSurveyResults(question, surveyMap);
+      }
     }
 
     return {
@@ -902,10 +992,12 @@ export class PollRoom extends Server<Env> {
       chat,
       wordCloud,
       reactions,
-      survey: null,
+      survey,
       scaleDistribution,
       averageRating,
       rankingResults,
+      leaderboard,
+      surveyResults,
     };
   }
 
@@ -932,7 +1024,8 @@ export class PollRoom extends Server<Env> {
     question: PollQuestion | null,
     votesForQuestion: Map<string, string[]>
   ): VoteCounts {
-    if (!question || question.kind !== "choice") return {};
+    if (!question || !("options" in question) || !question.options) return {};
+    if (question.kind !== "choice" && question.kind !== "quiz" && question.kind !== "assessment") return {};
     const counts: VoteCounts = {};
     for (const option of question.options) counts[option.id] = 0;
     for (const selectedOptionIds of votesForQuestion.values()) {
@@ -944,7 +1037,8 @@ export class PollRoom extends Server<Env> {
   }
 
   private getEmptyVoteCounts(question: PollQuestion | null): VoteCounts {
-    if (!question || question.kind !== "choice") return {};
+    if (!question || !("options" in question) || !question.options) return {};
+    if (question.kind !== "choice" && question.kind !== "quiz" && question.kind !== "assessment") return {};
     const counts: VoteCounts = {};
     for (const option of question.options) counts[option.id] = 0;
     return counts;
@@ -1009,6 +1103,14 @@ export class PollRoom extends Server<Env> {
     return created;
   }
 
+  private getSurveyForQuestion(questionIndex: number): Map<string, Record<string, string | string[]>> {
+    const existing = this.surveyByQuestion.get(questionIndex);
+    if (existing) return existing;
+    const created = new Map<string, Record<string, string | string[]>>();
+    this.surveyByQuestion.set(questionIndex, created);
+    return created;
+  }
+
   private getOpenEndedForQuestion(questionIndex: number) {
     const existing = this.openEndedByQuestion.get(questionIndex);
     if (existing) return existing;
@@ -1039,6 +1141,68 @@ export class PollRoom extends Server<Env> {
       .sort((a, b) => b.count - a.count);
   }
 
+  private buildLeaderboard(): LeaderboardEntry[] {
+    // Collect all voter IDs who have voted on quiz questions
+    const voterScores = new Map<string, { answered: number; correct: number }>();
+    for (let qi = 0; qi < QUESTIONS.length; qi++) {
+      const q = QUESTIONS[qi];
+      if (q.kind !== "quiz") continue;
+      const votes = this.votesByQuestionIndex.get(qi);
+      if (!votes) continue;
+      const qPhase = this.phaseByQuestionIndex.get(qi) ?? "idle";
+      for (const [vid, selection] of votes) {
+        let entry = voterScores.get(vid);
+        if (!entry) { entry = { answered: 0, correct: 0 }; voterScores.set(vid, entry); }
+        entry.answered += 1;
+        if (qPhase === "revealed" && isSelectionCorrect(selection, q.correctOptionIds)) {
+          entry.correct += 1;
+        }
+      }
+    }
+    const entries: LeaderboardEntry[] = [];
+    for (const [vid, scores] of voterScores) {
+      entries.push({
+        voterId: vid,
+        displayName: this.voterNames.get(vid) ?? "Anonymous",
+        answered: scores.answered,
+        correct: scores.correct,
+      });
+    }
+    return entries.sort((a, b) => b.correct - a.correct || a.answered - b.answered);
+  }
+
+  private buildSurveyResults(
+    question: Extract<PollQuestion, { kind: "survey" }>,
+    surveyMap: Map<string, Record<string, string | string[]>>
+  ): SurveyResults {
+    const questionResults = question.surveyQuestions.map((sq) => {
+      if (sq.type === "choice") {
+        const counts: Record<string, number> = {};
+        for (const opt of sq.options ?? []) counts[opt.id] = 0;
+        for (const responses of surveyMap.values()) {
+          const r = responses[sq.id];
+          const selections = Array.isArray(r) ? r : r ? [r] : [];
+          for (const sel of selections) {
+            if (typeof sel === "string" && sel in counts) counts[sel] += 1;
+          }
+        }
+        return { questionId: sq.id, prompt: sq.prompt, type: sq.type as "choice", choiceCounts: counts };
+      }
+      // text
+      const textResponses: string[] = [];
+      for (const responses of surveyMap.values()) {
+        const r = responses[sq.id];
+        if (typeof r === "string" && r.trim()) textResponses.push(r.trim());
+      }
+      return { questionId: sq.id, prompt: sq.prompt, type: sq.type as "text", textResponses };
+    });
+    return {
+      surveyId: question.id,
+      totalCompletions: surveyMap.size,
+      questionResults,
+    };
+  }
+
   private getScoreForVoter(voterId: string) {
     let answered = 0;
     let correct = 0;
@@ -1048,7 +1212,7 @@ export class PollRoom extends Server<Env> {
       const selection = votesForQuestion?.get(voterId);
       if (!selection || selection.length === 0) continue;
       const phase = this.phaseByQuestionIndex.get(questionIndex) ?? "idle";
-      if (question.kind === "choice") {
+      if (question.kind === "choice" || question.kind === "quiz" || question.kind === "assessment") {
         answered += 1;
         if (phase === "revealed" && isSelectionCorrect(selection, question.correctOptionIds)) {
           correct += 1;
@@ -1179,6 +1343,27 @@ export class PollRoom extends Server<Env> {
             votes: new Set(),
           });
         }
+      } else if (question.kind === "quiz" || question.kind === "assessment") {
+        // Same storage as choice
+        const allowedOptionIds = new Set(question.options.map((o) => o.id));
+        const validOptionIds: string[] = [];
+        for (const optionId of parsedOptionIds) {
+          if (typeof optionId !== "string" || !allowedOptionIds.has(optionId)) continue;
+          if (!validOptionIds.includes(optionId)) validOptionIds.push(optionId);
+        }
+        if (validOptionIds.length === 0) continue;
+        const voteMap = this.getVotesForQuestion(row.questionIndex);
+        voteMap.set(row.voterId, validOptionIds);
+      } else if (question.kind === "survey") {
+        // Survey responses stored as JSON string in the first element
+        if (typeof parsedOptionIds[0] !== "string") continue;
+        try {
+          const surveyData = JSON.parse(parsedOptionIds[0]);
+          if (typeof surveyData === "object" && surveyData !== null) {
+            const surveyMap = this.getSurveyForQuestion(row.questionIndex);
+            surveyMap.set(row.voterId, surveyData);
+          }
+        } catch { continue; }
       }
     }
 
@@ -1363,6 +1548,12 @@ function toPublicQuestion(question: PollQuestion): PollQuestionPublic {
       return { kind: "rating", id: question.id, prompt: question.prompt, maxRating: question.maxRating, ratingStyle: question.ratingStyle, hideResultsUntilReveal: question.hideResultsUntilReveal };
     case "ranking":
       return { kind: "ranking", id: question.id, prompt: question.prompt, items: question.items.map((i) => ({ ...i })), hideResultsUntilReveal: question.hideResultsUntilReveal };
+    case "quiz":
+      return { kind: "quiz", id: question.id, prompt: question.prompt, options: question.options.map((o) => ({ ...o })), allowMultiple: question.allowMultiple, hideResultsUntilReveal: question.hideResultsUntilReveal };
+    case "assessment":
+      return { kind: "assessment", id: question.id, prompt: question.prompt, options: question.options.map((o) => ({ ...o })), allowMultiple: question.allowMultiple, hideResultsUntilReveal: question.hideResultsUntilReveal };
+    case "survey":
+      return { kind: "survey", id: question.id, prompt: question.prompt, surveyQuestions: question.surveyQuestions.map((sq) => ({ ...sq, options: sq.options?.map((o) => ({ ...o })) })), hideResultsUntilReveal: question.hideResultsUntilReveal };
   }
 }
 
@@ -1483,8 +1674,8 @@ function parseIncomingMessage(rawMessage: string): IncomingMessage | null {
       if (typeof message.emoji !== "string") return null;
       return { type: "submit-reaction", emoji: message.emoji };
     case "submit-survey":
-      if (typeof message.surveyId !== "string" || typeof message.responses !== "object") return null;
-      return { type: "submit-survey", surveyId: message.surveyId, responses: message.responses as Record<number, string> };
+      if (typeof message.responses !== "object" || message.responses === null) return null;
+      return { type: "submit-survey", responses: message.responses as Record<string, string | string[]> };
     default:
       return null;
   }
@@ -1619,6 +1810,78 @@ function validateQuestions(rawQuestions: unknown): PollQuestion[] {
           id,
           prompt,
           items: validatedItems,
+          hideResultsUntilReveal: hideResultsUntilReveal === true,
+        });
+        break;
+      }
+
+      case "quiz":
+      case "assessment": {
+        const allowMultiple = question.allowMultiple;
+        const options = question.options;
+        const correctOptionIds = question.correctOptionIds;
+        if (typeof allowMultiple !== "boolean") throw new Error(`Question "${id}" (${kind}) must include boolean "allowMultiple".`);
+        if (!Array.isArray(options) || options.length < 2) throw new Error(`Question "${id}" (${kind}) must include at least two options.`);
+        if (!Array.isArray(correctOptionIds) || correctOptionIds.length === 0) throw new Error(`Question "${id}" (${kind}) must include one or more correctOptionIds.`);
+
+        const optionIds = new Set<string>();
+        const validatedOptions = (options as unknown[]).map((rawOption: unknown, optionIndex: number) => {
+          if (!rawOption || typeof rawOption !== "object") throw new Error(`Question "${id}" option at index ${optionIndex} must be an object.`);
+          const option = rawOption as Record<string, unknown>;
+          if (typeof option.id !== "string" || typeof option.label !== "string") throw new Error(`Question "${id}" has an option with invalid id or label.`);
+          if (optionIds.has(option.id)) throw new Error(`Question "${id}" has duplicate option id "${option.id}".`);
+          optionIds.add(option.id);
+          return { id: option.id, label: option.label };
+        });
+
+        const validatedCorrectOptionIds: string[] = [];
+        for (const rawId of correctOptionIds as unknown[]) {
+          if (typeof rawId !== "string" || !optionIds.has(rawId)) continue;
+          if (!validatedCorrectOptionIds.includes(rawId)) validatedCorrectOptionIds.push(rawId);
+        }
+
+        validatedQuestions.push({
+          kind: kind as "quiz" | "assessment",
+          id,
+          prompt,
+          allowMultiple,
+          hideResultsUntilReveal: hideResultsUntilReveal === true,
+          options: validatedOptions,
+          correctOptionIds: validatedCorrectOptionIds,
+        });
+        break;
+      }
+
+      case "survey": {
+        const surveyQuestions = question.surveyQuestions;
+        if (!Array.isArray(surveyQuestions) || surveyQuestions.length === 0) {
+          throw new Error(`Question "${id}" (survey) must include at least one surveyQuestion.`);
+        }
+        const validatedSurveyQuestions = (surveyQuestions as unknown[]).map((rawSq: unknown, sqIndex: number) => {
+          if (!rawSq || typeof rawSq !== "object") throw new Error(`Survey "${id}" sub-question at index ${sqIndex} must be an object.`);
+          const sq = rawSq as Record<string, unknown>;
+          if (typeof sq.id !== "string" || typeof sq.prompt !== "string") throw new Error(`Survey "${id}" sub-question at index ${sqIndex} has invalid id or prompt.`);
+          const sqType = sq.type === "text" ? "text" : "choice";
+          const sqOptions = sqType === "choice" && Array.isArray(sq.options)
+            ? (sq.options as unknown[]).map((rawOpt: unknown) => {
+                if (!rawOpt || typeof rawOpt !== "object") return { id: "?", label: "?" };
+                const opt = rawOpt as Record<string, unknown>;
+                return { id: String(opt.id ?? ""), label: String(opt.label ?? "") };
+              })
+            : undefined;
+          return {
+            id: sq.id,
+            prompt: sq.prompt,
+            type: sqType as "choice" | "text",
+            options: sqOptions,
+            allowMultiple: sq.allowMultiple === true,
+          };
+        });
+        validatedQuestions.push({
+          kind: "survey",
+          id,
+          prompt,
+          surveyQuestions: validatedSurveyQuestions,
           hideResultsUntilReveal: hideResultsUntilReveal === true,
         });
         break;
