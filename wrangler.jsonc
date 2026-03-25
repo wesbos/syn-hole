@@ -8,6 +8,12 @@
     "HOST_KEY": "change-me",
     "ADMIN_KEY": "change-me-admin",
   },
+  "routes": [
+    {
+      "pattern": "live.syntax.fm",
+      "custom_domain": true,
+    },
+  ],
   "durable_objects": {
     "bindings": [
       {
