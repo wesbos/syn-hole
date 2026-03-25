@@ -461,7 +461,7 @@ function AudienceContent(props: {
     return (
       <section className="audience-layout">
         <div className="audience-left">
-          <div className="audience-meta-row">
+          <div className="audience-meta-row u-inline-flex-center">
             <span className="question-pill">
               Question {stateMessage.currentQuestionIndex + 1}/{stateMessage.totalQuestions}
             </span>
@@ -515,7 +515,7 @@ function AudienceContent(props: {
   return (
     <section className="audience-layout">
       <div className="audience-left">
-        <div className="audience-meta-row">
+        <div className="audience-meta-row u-inline-flex-center">
           <span className="question-pill">
             Question {stateMessage.currentQuestionIndex + 1}/{stateMessage.totalQuestions}
           </span>
@@ -757,7 +757,7 @@ function HostView(props: {
           <h3>Share Links</h3>
           <div className="link-rows">
             <div className="link-row">
-              <span className="link-row-label">
+              <span className="link-row-label u-inline-flex-center">
                 <Link2 size={14} strokeWidth={2} aria-hidden />
                 Audience
               </span>
@@ -779,7 +779,7 @@ function HostView(props: {
               </div>
             </div>
             <div className="link-row">
-              <span className="link-row-label">
+              <span className="link-row-label u-inline-flex-center">
                 <Link2 size={14} strokeWidth={2} aria-hidden />
                 Projector
               </span>
@@ -801,7 +801,7 @@ function HostView(props: {
               </div>
             </div>
             <div className="link-row">
-              <span className="link-row-label">
+              <span className="link-row-label u-inline-flex-center">
                 <Link2 size={14} strokeWidth={2} aria-hidden />
                 Host
               </span>
@@ -939,7 +939,7 @@ function ProjectorHeadContent(props: { stateMessage: StateMessage }) {
   if (!question) return null;
   return (
     <>
-      <div className="projector-meta-row">
+      <div className="projector-meta-row u-inline-flex-center">
         <span className="projector-kicker">Current Question</span>
         <span className="projector-answered-pill">{stateMessage.totalResponses} answered</span>
       </div>
