@@ -4,6 +4,8 @@
   "main": "src/server.ts",
   "compatibility_date": "2026-03-17",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": true,
   "routes": [
     {
       "pattern": "live.syntax.fm",
