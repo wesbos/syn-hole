@@ -96,7 +96,7 @@ export default {
 
     if (partyResponse) return partyResponse;
 
-    return handler.fetch(request, env, ctx);
+    return handler.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
 
