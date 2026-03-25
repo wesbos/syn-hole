@@ -96,7 +96,8 @@ export default {
 
     if (partyResponse) return partyResponse;
 
-    return handler.fetch(request);
+    // @ts-expect-error — TanStack Start types declare 1 param but Cloudflare adapter passes env+ctx at runtime
+    return handler.fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<Env>;
 
