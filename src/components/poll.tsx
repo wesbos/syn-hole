@@ -412,9 +412,167 @@ function QuestionInput(props: {
       return <RatingInput stateMessage={stateMessage} sendMessage={sendMessage} />;
     case "ranking":
       return <RankingInput stateMessage={stateMessage} sendMessage={sendMessage} />;
+    case "quiz":
+    case "assessment":
+      return (
+        <>
+          <div className={`quiz-badge ${question.kind === "quiz" ? "quiz-badge-quiz" : "quiz-badge-assessment"}`}>
+            {question.kind === "quiz" ? "🏆 Quiz — Leaderboard" : "📝 Assessment — Self-Score"}
+          </div>
+          <AudienceChoiceOptions
+            question={question}
+            voteCounts={stateMessage.voteCounts}
+            totalResponses={stateMessage.totalResponses}
+            selectedOptionIds={selectedOptionIds}
+            revealCorrectOptionIds={stateMessage.reveal?.kind === "choice" ? stateMessage.reveal.correctOptionIds : []}
+            showResults={stateMessage.resultsVisible}
+            canInteract={votingOpen}
+            onToggleOption={onToggleOption}
+          />
+          {stateMessage.score ? (
+            <div className="quiz-score-card">
+              <span className="quiz-score-label">Your Score</span>
+              <strong>{stateMessage.score.correct} / {stateMessage.score.answered}</strong>
+            </div>
+          ) : null}
+          {question.kind === "quiz" && stateMessage.leaderboard && stateMessage.leaderboard.length > 0 ? (
+            <Leaderboard entries={stateMessage.leaderboard} />
+          ) : null}
+        </>
+      );
+    case "survey":
+      return <SurveyForm stateMessage={stateMessage} sendMessage={sendMessage} />;
     default:
       return null;
   }
+}
+
+function Leaderboard(props: { entries: Array<{ voterId: string; displayName: string; answered: number; correct: number }> }) {
+  return (
+    <div className="leaderboard-card">
+      <h4 className="leaderboard-title">🏆 Leaderboard</h4>
+      <div className="leaderboard-list">
+        {props.entries.slice(0, 10).map((entry, index) => (
+          <div key={entry.voterId} className={`leaderboard-row ${index < 3 ? "leaderboard-top" : ""}`}>
+            <span className="leaderboard-rank">#{index + 1}</span>
+            <span className="leaderboard-name">{entry.displayName}</span>
+            <span className="leaderboard-score">{entry.correct}/{entry.answered}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SurveyForm(props: { stateMessage: Extract<OutgoingMessage, { type: "state" }>; sendMessage: (msg: IncomingMessage) => void }) {
+  const { stateMessage, sendMessage } = props;
+  const survey = stateMessage.survey;
+  if (!survey) return null;
+
+  const votingOpen = stateMessage.phase === "open";
+  const [responses, setResponses] = useState<Record<string, string | string[]>>(survey.yourResponses ?? {});
+
+  function updateResponse(questionId: string, value: string | string[]) {
+    setResponses((prev) => ({ ...prev, [questionId]: value }));
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    sendMessage({ type: "submit-survey", responses });
+  }
+
+  if (survey.yourCompleted) {
+    return (
+      <div className="panel survey-completed">
+        <CheckCircle2 size={32} className="survey-check-icon" />
+        <h3>Survey Submitted</h3>
+        <p className="muted">Thank you for your feedback!</p>
+        {stateMessage.surveyResults ? <SurveyResultsView results={stateMessage.surveyResults} /> : null}
+      </div>
+    );
+  }
+
+  return (
+    <form className="panel survey-form" onSubmit={handleSubmit}>
+      <h3 className="survey-title">📋 {stateMessage.question?.prompt ?? "Survey"}</h3>
+      {survey.questions.map((sq) => (
+        <div key={sq.id} className="survey-question">
+          <label className="survey-question-label">{sq.prompt}</label>
+          {sq.type === "text" ? (
+            <input
+              type="text"
+              className="text-input"
+              value={(responses[sq.id] as string) ?? ""}
+              onChange={(e) => updateResponse(sq.id, e.currentTarget.value)}
+              placeholder="Your answer..."
+              maxLength={500}
+              disabled={!votingOpen}
+            />
+          ) : (
+            <div className="survey-options">
+              {(sq.options ?? []).map((opt) => {
+                const selected = Array.isArray(responses[sq.id])
+                  ? (responses[sq.id] as string[]).includes(opt.id)
+                  : responses[sq.id] === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`survey-option-btn ${selected ? "is-selected" : ""}`}
+                    onClick={() => {
+                      if (sq.allowMultiple) {
+                        const current = Array.isArray(responses[sq.id]) ? (responses[sq.id] as string[]) : [];
+                        updateResponse(sq.id, selected ? current.filter((id) => id !== opt.id) : [...current, opt.id]);
+                      } else {
+                        updateResponse(sq.id, opt.id);
+                      }
+                    }}
+                    disabled={!votingOpen}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+      <button type="submit" disabled={!votingOpen} className="survey-submit-btn">
+        Submit Survey
+      </button>
+    </form>
+  );
+}
+
+function SurveyResultsView(props: { results: NonNullable<Extract<OutgoingMessage, { type: "state" }>["surveyResults"]> }) {
+  const { results } = props;
+  return (
+    <div className="survey-results">
+      <p className="muted">{results.totalCompletions} completion{results.totalCompletions !== 1 ? "s" : ""}</p>
+      {results.questionResults.map((qr) => (
+        <div key={qr.questionId} className="survey-result-item">
+          <span className="survey-result-prompt">{qr.prompt}</span>
+          {qr.type === "choice" && qr.choiceCounts ? (
+            <div className="survey-result-choices">
+              {Object.entries(qr.choiceCounts).map(([optId, count]) => (
+                <div key={optId} className="survey-result-choice">
+                  <span>{optId}</span>
+                  <span className="survey-result-count">{count}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {qr.type === "text" && qr.textResponses ? (
+            <div className="survey-result-texts">
+              {qr.textResponses.map((t, i) => (
+                <p key={i} className="survey-result-text">"{t}"</p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function OpenEndedInput(props: { stateMessage: Extract<OutgoingMessage, { type: "state" }>; sendMessage: (msg: IncomingMessage) => void }) {
@@ -726,6 +884,27 @@ function QuestionResults(props: {
         </div>
       ) : (
         <p className="muted">No rankings yet.</p>
+      );
+    case "quiz":
+    case "assessment":
+      return (
+        <div>
+          <HostPreviewChoiceResults
+            question={question}
+            voteCounts={stateMessage.voteCounts}
+            totalResponses={stateMessage.totalResponses}
+            showResults={stateMessage.resultsVisible}
+          />
+          {question.kind === "quiz" && stateMessage.leaderboard && stateMessage.leaderboard.length > 0 ? (
+            <Leaderboard entries={stateMessage.leaderboard} />
+          ) : null}
+        </div>
+      );
+    case "survey":
+      return stateMessage.surveyResults ? (
+        <SurveyResultsView results={stateMessage.surveyResults} />
+      ) : (
+        <p className="muted">{stateMessage.totalResponses} completion{stateMessage.totalResponses !== 1 ? "s" : ""}</p>
       );
     default:
       return null;
@@ -1138,7 +1317,7 @@ function ProjectorView(props: {
 // ── Reusable sub-components ─────────────────────────────────────
 
 function ProjectorChoiceResults(props: {
-  question: PollChoiceQuestionPublic | PollChoiceQuestion;
+  question: ChoiceLikeQuestion;
   voteCounts: Record<string, number>;
   totalResponses: number;
   showResults: boolean;
@@ -1174,8 +1353,10 @@ function ProjectorChoiceResults(props: {
   );
 }
 
+type ChoiceLikeQuestion = { kind: string; options: Array<{ id: string; label: string }>; allowMultiple: boolean };
+
 function AudienceChoiceOptions(props: {
-  question: PollChoiceQuestionPublic | PollChoiceQuestion;
+  question: ChoiceLikeQuestion;
   voteCounts: Record<string, number>;
   totalResponses: number;
   selectedOptionIds: string[];
@@ -1225,7 +1406,7 @@ function AudienceChoiceOptions(props: {
 }
 
 function HostPreviewChoiceResults(props: {
-  question: PollChoiceQuestionPublic | PollChoiceQuestion;
+  question: ChoiceLikeQuestion;
   voteCounts: Record<string, number>;
   totalResponses: number;
   showResults: boolean;
@@ -1320,6 +1501,9 @@ function getQuestionKindLabel(kind: string): string {
     case "draggable_scale": return "Slider";
     case "rating": return "Rating";
     case "ranking": return "Ranking";
+    case "quiz": return "Quiz";
+    case "assessment": return "Assessment";
+    case "survey": return "Survey";
     default: return kind;
   }
 }

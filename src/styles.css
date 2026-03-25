@@ -2473,6 +2473,243 @@ button:disabled {
   color: var(--muted);
 }
 
+/* ── Quiz / Assessment ── */
+
+.quiz-badge {
+  display: inline-block;
+  padding: 0.35rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.5rem;
+}
+
+.quiz-badge-quiz {
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffc107;
+}
+
+.quiz-badge-assessment {
+  background: #d1ecf1;
+  color: #0c5460;
+  border: 1px solid #bee5eb;
+}
+
+.quiz-score-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  margin-top: 0.6rem;
+}
+
+.quiz-score-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.quiz-score-card strong {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 1.3rem;
+  color: var(--accent-ink);
+}
+
+/* ── Leaderboard ── */
+
+.leaderboard-card {
+  margin-top: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.8rem;
+  background: var(--surface);
+}
+
+.leaderboard-title {
+  margin: 0 0 0.5rem;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.leaderboard-list {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: var(--surface-soft);
+  font-size: 0.85rem;
+}
+
+.leaderboard-row.leaderboard-top {
+  background: #fffbea;
+  border: 1px solid #ffd709;
+}
+
+.leaderboard-rank {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--accent-ink);
+  min-width: 2rem;
+}
+
+.leaderboard-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.leaderboard-score {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* ── Survey ── */
+
+.survey-form {
+  padding: 1.2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.survey-title {
+  margin: 0;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 1.4rem;
+  letter-spacing: -0.02em;
+}
+
+.survey-question {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.survey-question-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.survey-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.survey-option-btn {
+  padding: 0.5rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.survey-option-btn.is-selected {
+  border-color: #c4ac36;
+  background: #fffbea;
+  color: var(--accent-ink);
+}
+
+.survey-option-btn:hover:not(:disabled) {
+  border-color: #c4ac36;
+}
+
+.survey-submit-btn {
+  width: 100%;
+  min-height: 48px;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 1.05rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.survey-completed {
+  text-align: center;
+  padding: 2rem 1.2rem;
+  display: grid;
+  gap: 0.5rem;
+  place-items: center;
+}
+
+.survey-check-icon {
+  color: #2f7c37;
+}
+
+.survey-completed h3 {
+  margin: 0;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 1.6rem;
+}
+
+.survey-results {
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.survey-result-item {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.survey-result-prompt {
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.survey-result-choices {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.survey-result-choice {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0.5rem;
+  background: var(--surface-soft);
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+
+.survey-result-count {
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.survey-result-texts {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.survey-result-text {
+  margin: 0;
+  padding: 0.3rem 0.5rem;
+  background: var(--surface-soft);
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-style: italic;
+  color: var(--muted);
+}
+
 @media (max-width: 900px) {
   .app {
     width: calc(100% - 1rem);
