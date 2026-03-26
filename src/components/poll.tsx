@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import NumberFlow from "@number-flow/react";
 import usePartySocket from "partysocket/react";
 import {
   CheckCircle2,
@@ -76,6 +77,8 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
   const [stateMessage, setStateMessage] = useState<
     Extract<OutgoingMessage, { type: "state" }> | null
   >(null);
+  const [roomStartAtMs, setRoomStartAtMs] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const audienceVoterId = useMemo(
     () => (role === "audience" ? getOrCreateVoterId() : ""),
@@ -196,6 +199,47 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
     stateMessage !== null &&
     stateMessage.currentQuestionIndex === 0 &&
     stateMessage.phase === "idle";
+  const msUntilRoomStart = roomStartAtMs === null ? null : roomStartAtMs - nowMs;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshRoomStartTime() {
+      try {
+        const response = await fetch(`/api/rooms/${encodeURIComponent(room)}/start-time`, {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { startAt?: unknown };
+        const nextStartAtMs = parseRoomStartTimeMs(payload.startAt);
+        if (!cancelled) setRoomStartAtMs(nextStartAtMs ?? null);
+      } catch {
+        if (!cancelled) setRoomStartAtMs(null);
+      }
+    }
+
+    void refreshRoomStartTime();
+    const refreshIntervalMs = showStartingSoon ? 10_000 : 60_000;
+    const intervalId = window.setInterval(() => {
+      void refreshRoomStartTime();
+    }, refreshIntervalMs);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [room, showStartingSoon]);
+
+  useEffect(() => {
+    if (!showStartingSoon || roomStartAtMs === null) return;
+    setNowMs(Date.now());
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [showStartingSoon, roomStartAtMs]);
 
   function sendMessage(message: IncomingMessage) {
     if (socket.readyState !== WebSocket.OPEN) {
@@ -289,7 +333,9 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
               <div className="header-live-stats header-live-stats-design">
                 <span className="live-chip live-chip-connected live-chip-compact" title="Participants">
                   <Users size={13} strokeWidth={2} aria-hidden />
-                  <strong>{stateMessage.participants}</strong>
+                  <strong>
+                    <FlowInteger value={stateMessage.participants} />
+                  </strong>
                 </span>
               </div>
             ) : null}
@@ -306,7 +352,13 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
 
       {stateMessage && view === "audience" ? (
         showStartingSoon ? (
-          <StartingSoonView stateMessage={stateMessage} audienceUrl={roomLinks.audience} room={room} />
+          <StartingSoonView
+            stateMessage={stateMessage}
+            audienceUrl={roomLinks.audience}
+            room={room}
+            roomStartAtMs={roomStartAtMs}
+            msUntilRoomStart={msUntilRoomStart}
+          />
         ) : (
           <AudienceView
             stateMessage={stateMessage}
@@ -333,7 +385,13 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
 
       {stateMessage && view === "projector" ? (
         showStartingSoon ? (
-          <StartingSoonView stateMessage={stateMessage} audienceUrl={roomLinks.audience} room={room} />
+          <StartingSoonView
+            stateMessage={stateMessage}
+            audienceUrl={roomLinks.audience}
+            room={room}
+            roomStartAtMs={roomStartAtMs}
+            msUntilRoomStart={msUntilRoomStart}
+          />
         ) : (
           <ProjectorView stateMessage={stateMessage} audienceUrl={roomLinks.audience} />
         )
@@ -463,12 +521,17 @@ function AudienceContent(props: {
         <div className="audience-left">
           <div className="audience-meta-row u-inline-flex-center">
             <span className="question-pill">
-              Question {stateMessage.currentQuestionIndex + 1}/{stateMessage.totalQuestions}
+              <QuestionCounter
+                currentQuestionIndex={stateMessage.currentQuestionIndex}
+                totalQuestions={stateMessage.totalQuestions}
+              />
             </span>
             <span className={`audience-live-dot ${votingOpen ? "is-live" : ""}`}>
               {votingOpen ? "Live" : "Waiting"}
             </span>
-            <span className="audience-answered-pill">{stateMessage.totalResponses} answered</span>
+            <span className="audience-answered-pill">
+              <FlowInteger value={stateMessage.totalResponses} /> answered
+            </span>
           </div>
           <h2 className="audience-hero">{question.prompt}</h2>
         </div>
@@ -517,12 +580,17 @@ function AudienceContent(props: {
       <div className="audience-left">
         <div className="audience-meta-row u-inline-flex-center">
           <span className="question-pill">
-            Question {stateMessage.currentQuestionIndex + 1}/{stateMessage.totalQuestions}
+            <QuestionCounter
+              currentQuestionIndex={stateMessage.currentQuestionIndex}
+              totalQuestions={stateMessage.totalQuestions}
+            />
           </span>
           <span className={`audience-live-dot ${votingOpen ? "is-live" : ""}`}>
             {votingOpen ? "Live" : "Closed"}
           </span>
-          <span className="audience-answered-pill">{stateMessage.totalResponses} answered</span>
+          <span className="audience-answered-pill">
+            <FlowInteger value={stateMessage.totalResponses} /> answered
+          </span>
         </div>
         <h2 className="audience-hero">{renderAudiencePrompt(question.prompt)}</h2>
       </div>
@@ -538,7 +606,9 @@ function AudienceContent(props: {
           canInteract={canInteract}
           onToggleOption={onToggleOption}
         />
-        <div className="audience-total-card">{stateMessage.totalResponses} total answers submitted</div>
+        <div className="audience-total-card">
+          <FlowInteger value={stateMessage.totalResponses} /> total answers submitted
+        </div>
       </div>
     </section>
   );
@@ -548,34 +618,43 @@ function StartingSoonView(props: {
   stateMessage: Extract<OutgoingMessage, { type: "state" }>;
   audienceUrl: string;
   room: string;
+  roomStartAtMs: number | null;
+  msUntilRoomStart: number | null;
 }) {
-  const { stateMessage, audienceUrl, room } = props;
+  const { stateMessage, audienceUrl, room, roomStartAtMs, msUntilRoomStart } = props;
   const { qrUrl, shortLink } = getAudienceQrDetails(audienceUrl);
   const rootDomain = getRootDomain(audienceUrl);
+  const showCountdown =
+    roomStartAtMs !== null && msUntilRoomStart !== null && msUntilRoomStart > 0;
+
   return (
     <section className="starting-soon-shell">
       <div className="starting-soon-grid">
-        <div className="panel starting-soon-main">
-          <span className="starting-soon-kicker">Room is warming up</span>
-          <h2 className="starting-soon-title">Starting Soon</h2>
-          <p className="starting-soon-lead">
-            The host will open the first question shortly. Scan the QR to join now.
+        <div className="panel starting-soon-simple starting-soon-main" aria-live="polite">
+          <span className="starting-soon-kicker">Room Lobby</span>
+          <h2 className="starting-soon-main-timer">
+            {showCountdown ? (
+              <>
+                STARTING IN <CountdownFlow milliseconds={msUntilRoomStart} />
+              </>
+            ) : (
+              "STARTING SOON"
+            )}
+          </h2>
+          <p className="starting-soon-info-line">
+            <span>Go to</span>
+            <strong>{rootDomain}</strong>
           </p>
-          <div className="starting-soon-cta" aria-live="polite">
-            <p className="starting-soon-cta-line">
-              <span>Go to</span>
-              <strong>{rootDomain}</strong>
-            </p>
-            <p className="starting-soon-cta-line starting-soon-cta-code">
-              <span>Enter code</span>
-              <strong>{room}</strong>
-            </p>
-          </div>
-          <span className="live-chip live-chip-connected starting-soon-chip">
-            <Users size={13} strokeWidth={2} aria-hidden />
-            <strong>{stateMessage.participants}</strong>
+          <p className="starting-soon-info-line">
+            <span>Enter code</span>
+            <strong>{room}</strong>
+          </p>
+          <div className="starting-soon-users">
             <small>Users currently in this room</small>
-          </span>
+            <strong>
+              <FlowInteger value={stateMessage.participants} />
+            </strong>
+          </div>
         </div>
         <aside className="projector-side">
           <div className="projector-qr-card starting-soon-qr-card">
@@ -836,7 +915,8 @@ function HostView(props: {
         </div>
 
         <span className="host-preview-question-count">
-          Question {stateMessage.currentQuestionIndex + 1} of {stateMessage.totalQuestions}
+          Question <FlowInteger value={stateMessage.currentQuestionIndex + 1} /> of{" "}
+          <FlowInteger value={stateMessage.totalQuestions} />
         </span>
         <h3>{question ? question.prompt : "Waiting for question"}</h3>
 
@@ -867,7 +947,8 @@ function HostView(props: {
           <div className="host-preview-stat">
             <small>Active users</small>
             <strong>
-              {stateMessage.totalResponses}/{Math.max(1, stateMessage.participants)}
+              <FlowInteger value={stateMessage.totalResponses} />/
+              <FlowInteger value={Math.max(1, stateMessage.participants)} />
             </strong>
           </div>
           <span className="host-preview-phase">
@@ -941,7 +1022,9 @@ function ProjectorHeadContent(props: { stateMessage: StateMessage }) {
     <>
       <div className="projector-meta-row u-inline-flex-center">
         <span className="projector-kicker">Current Question</span>
-        <span className="projector-answered-pill">{stateMessage.totalResponses} answered</span>
+        <span className="projector-answered-pill">
+          <FlowInteger value={stateMessage.totalResponses} /> answered
+        </span>
       </div>
       <h2 className="projector-title">{question.prompt}</h2>
     </>
@@ -1016,7 +1099,15 @@ function ProjectorChoiceResults(props: {
           <div className="projector-bar-row" key={option.id}>
             <div className="projector-bar-topline">
               <span className={`projector-bar-label ${isWinner ? "is-correct" : ""}`}>{option.label}</span>
-              <span>{showResults ? `${percent}% (${votes})` : "--"}</span>
+              <span>
+                {showResults ? (
+                  <>
+                    <FlowInteger value={percent} />% (<FlowInteger value={votes} />)
+                  </>
+                ) : (
+                  "--"
+                )}
+              </span>
             </div>
             <div className="projector-bar-track">
               <div
@@ -1080,7 +1171,11 @@ function AudienceChoiceOptions(props: {
               <strong>{option.label}</strong>
             </div>
             <div className="audience-option-right">
-              {showResults ? <span>{percent}%</span> : null}
+              {showResults ? (
+                <span>
+                  <FlowInteger value={percent} />%
+                </span>
+              ) : null}
               {feedback === "selected-correct" || feedback === "missed-correct" ? (
                 <CheckCircle2 size={16} strokeWidth={2.2} aria-hidden />
               ) : null}
@@ -1115,7 +1210,15 @@ function HostPreviewChoiceResults(props: {
           <div className="host-preview-result-row" key={option.id}>
             <div className="host-preview-result-top">
               <span>{option.label}</span>
-              <span>{showResults ? `${votes} votes (${percent}%)` : "--"}</span>
+              <span>
+                {showResults ? (
+                  <>
+                    <FlowInteger value={votes} /> votes (<FlowInteger value={percent} />%)
+                  </>
+                ) : (
+                  "--"
+                )}
+              </span>
             </div>
             <div className="host-preview-result-track">
               <div
@@ -1222,7 +1325,9 @@ function ResultsList(props: {
                 </span>
                 <span>
                   {showResults ? (
-                    `${votes} (${percent}%)`
+                    <>
+                      <FlowInteger value={votes} /> (<FlowInteger value={percent} />%)
+                    </>
                   ) : (
                     <Eye
                       className="hidden-eye-icon"
@@ -1265,19 +1370,28 @@ function NumberResults(props: {
   return (
     <div className="number-results">
       <p className="muted">
-        {totalResponses} guess{totalResponses === 1 ? "" : "es"} submitted
+        <FlowInteger value={totalResponses} /> guess{totalResponses === 1 ? "" : "es"} submitted
       </p>
-      {yourNumberGuess !== null ? <p className="muted">Your guess: {yourNumberGuess}</p> : null}
+      {yourNumberGuess !== null ? (
+        <p className="muted">
+          Your guess: <FlowNumber value={yourNumberGuess} />
+        </p>
+      ) : null}
       {numberReveal ? (
         <div className="number-reveal-card">
-          <p className="muted">Target number: {numberReveal.correctNumber}</p>
+          <p className="muted">
+            Target number: <FlowNumber value={numberReveal.correctNumber} />
+          </p>
           {numberReveal.winningGuess === null ? (
             <p className="muted">No winners this round (all guesses were over).</p>
           ) : (
             <>
-              <p className="muted">Winning guess: {numberReveal.winningGuess}</p>
               <p className="muted">
-                Winner{numberReveal.winnerCount === 1 ? "" : "s"}: {numberReveal.winnerCount}
+                Winning guess: <FlowNumber value={numberReveal.winningGuess} />
+              </p>
+              <p className="muted">
+                Winner{numberReveal.winnerCount === 1 ? "" : "s"}:{" "}
+                <FlowInteger value={numberReveal.winnerCount} />
               </p>
             </>
           )}
@@ -1292,6 +1406,66 @@ function NumberResults(props: {
         </p>
       ) : null}
     </div>
+  );
+}
+
+function FlowNumber(props: {
+  value: number;
+  format?: Intl.NumberFormatOptions;
+  trend?: number;
+  className?: string;
+}) {
+  const { value, format, trend = 0, className } = props;
+  return <NumberFlow className={className} value={value} trend={trend} format={format} />;
+}
+
+function FlowInteger(props: { value: number; className?: string; trend?: number }) {
+  const { value, className, trend = 0 } = props;
+  return (
+    <FlowNumber
+      className={className}
+      value={value}
+      trend={trend}
+      format={{ useGrouping: false, maximumFractionDigits: 0 }}
+    />
+  );
+}
+
+function QuestionCounter(props: { currentQuestionIndex: number; totalQuestions: number }) {
+  const { currentQuestionIndex, totalQuestions } = props;
+  return (
+    <>
+      Question <FlowInteger value={currentQuestionIndex + 1} />/
+      <FlowInteger value={totalQuestions} />
+    </>
+  );
+}
+
+function CountdownFlow(props: { milliseconds: number }) {
+  const totalSeconds = Math.max(0, Math.ceil(props.milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return (
+    <span className="countdown-flow">
+      <FlowNumber
+        value={hours}
+        trend={-1}
+        format={{ useGrouping: false, maximumFractionDigits: 0, minimumIntegerDigits: 2 }}
+      />
+      :
+      <FlowNumber
+        value={minutes}
+        trend={-1}
+        format={{ useGrouping: false, maximumFractionDigits: 0, minimumIntegerDigits: 2 }}
+      />
+      :
+      <FlowNumber
+        value={seconds}
+        trend={-1}
+        format={{ useGrouping: false, maximumFractionDigits: 0, minimumIntegerDigits: 2 }}
+      />
+    </span>
   );
 }
 
@@ -1353,6 +1527,12 @@ function getRootDomain(audienceUrl: string): string {
   } catch {
     return "your-domain.com";
   }
+}
+
+function parseRoomStartTimeMs(value: unknown): number | null {
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function useQuestionCrossSlideTransition(stateMessage: StateMessage): {

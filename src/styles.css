@@ -64,6 +64,10 @@
   box-sizing: border-box;
 }
 
+number-flow-react {
+  font-variant-numeric: tabular-nums;
+}
+
 html {
   font-size: 85%;
 }
@@ -764,6 +768,86 @@ button:disabled {
   padding: 14px 0 11px;
 }
 
+.starting-soon-simple {
+  display: grid;
+  justify-items: stretch;
+  gap: 12px;
+  text-align: left;
+  padding: 24px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-soft) 75%, var(--surface)) 0%,
+    var(--surface) 58%
+  );
+}
+
+.starting-soon-main-timer {
+  margin: 0;
+  font-size: clamp(36px, 8vw, 84px);
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.countdown-flow {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.08em;
+}
+
+.countdown-flow number-flow-react {
+  min-width: 2ch;
+  text-align: center;
+}
+
+.starting-soon-info-line {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: clamp(20px, 4vw, 36px);
+  font-family: var(--font-display);
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 75%, var(--surface));
+}
+
+.starting-soon-info-line span {
+  font-size: 0.45em;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: color-mix(in srgb, var(--text) 62%, transparent);
+}
+
+.starting-soon-info-line strong {
+  letter-spacing: -0.02em;
+}
+
+.starting-soon-users {
+  margin-top: 2px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--line) 90%, var(--surface));
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.starting-soon-users small {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.starting-soon-users strong {
+  font-family: var(--font-display);
+  font-size: clamp(26px, 5vw, 44px);
+}
+
 .starting-soon-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
@@ -776,6 +860,19 @@ button:disabled {
   gap: 13px;
   min-height: 320px;
   align-content: center;
+  border-color: var(--gray);
+  position: relative;
+  overflow: hidden;
+}
+
+.starting-soon-main::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 45%, var(--surface)) 100%);
 }
 
 .starting-soon-kicker {
@@ -783,7 +880,12 @@ button:disabled {
   text-transform: uppercase;
   letter-spacing: 0.12em;
   font-weight: 700;
-  color: color-mix(in srgb, var(--text) 70%, transparent);
+  color: color-mix(in srgb, var(--text) 72%, transparent);
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--gray);
+  background: color-mix(in srgb, var(--surface-soft) 84%, var(--surface));
 }
 
 .starting-soon-title {
@@ -798,6 +900,36 @@ button:disabled {
   margin: 0;
   font-size: 14px;
   max-width: 44ch;
+  color: var(--muted);
+}
+
+.starting-soon-countdown {
+  display: inline-grid;
+  width: fit-content;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: color-mix(in srgb, var(--accent) 11%, var(--surface));
+}
+
+.starting-soon-countdown-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--text) 60%, transparent);
+}
+
+.starting-soon-countdown strong {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 6vw, 56px);
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+}
+
+.starting-soon-countdown small {
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -1882,6 +2014,18 @@ button:disabled {
   gap: 6px;
 }
 
+.admin-room-open-time-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.admin-room-open-time-input {
+  width: min(100%, 240px);
+  min-width: 170px;
+}
+
 .admin-field-label-inline {
   font-size: 9px;
   text-transform: uppercase;
@@ -1953,6 +2097,10 @@ button:disabled {
 
 .admin-action-delete:hover:not(:disabled) {
   background: color-mix(in srgb, var(--danger) 9%, var(--surface));
+}
+
+.admin-action-save-time {
+  padding-inline: 10px;
 }
 
 .admin-qr-section {

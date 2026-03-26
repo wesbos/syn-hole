@@ -41,6 +41,16 @@ async function lookupRoomHostKey(env: Env, roomName: string): Promise<string | n
   return data.found && data.hostKey ? data.hostKey : null;
 }
 
+async function lookupRoomStartAt(env: Env, roomName: string): Promise<string | null> {
+  const stub = getRegistryStub(env);
+  const resp = await stub.fetch(
+    new Request(`http://internal/rooms/${encodeURIComponent(roomName)}/start-time`)
+  );
+  const data = (await resp.json()) as { found: boolean; startAt?: string | null };
+  if (!data.found) return null;
+  return typeof data.startAt === "string" && data.startAt.length > 0 ? data.startAt : null;
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -62,6 +72,16 @@ export default {
         );
       }
       return new Response("Method Not Allowed", { status: 405 });
+    }
+
+    const roomStartTimeMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/start-time$/);
+    if (roomStartTimeMatch && request.method === "GET") {
+      const roomName = decodeURIComponent(roomStartTimeMatch[1]);
+      const startAt = await lookupRoomStartAt(env, roomName);
+      return Response.json(
+        { room: roomName, startAt },
+        { headers: { "cache-control": "no-store" } }
+      );
     }
 
     if (url.pathname.startsWith("/api/admin")) {

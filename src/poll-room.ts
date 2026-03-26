@@ -1,6 +1,6 @@
 import { Server } from "partyserver";
 import type { Connection, ConnectionContext } from "partyserver";
-import questionsJson from "./data/questions.json";
+import questionsData from "./data/questions";
 import type {
   IncomingMessage,
   OutgoingMessage,
@@ -17,7 +17,7 @@ type PollConnectionState = {
   displayName: string | null;
 };
 
-const QUESTIONS = validateQuestions(questionsJson);
+const QUESTIONS = validateQuestions(questionsData);
 
 export class PollRoom extends Server<Env> {
   static options = { hibernate: true };
@@ -836,7 +836,7 @@ function parseIncomingMessage(rawMessage: string): IncomingMessage | null {
 
 function validateQuestions(rawQuestions: unknown): PollQuestion[] {
   if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
-    throw new Error("questions.json must export a non-empty array.");
+    throw new Error("questions data module must export a non-empty array.");
   }
 
   const ids = new Set<string>();
@@ -858,7 +858,7 @@ function validateQuestions(rawQuestions: unknown): PollQuestion[] {
       throw new Error(`Question at index ${index} has an invalid "id".`);
     }
     if (ids.has(id)) {
-      throw new Error(`Duplicate question id "${id}" found in questions.json.`);
+      throw new Error(`Duplicate question id "${id}" found in questions data module.`);
     }
     ids.add(id);
 

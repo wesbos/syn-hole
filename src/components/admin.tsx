@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import NumberFlow from "@number-flow/react";
 import {
   Copy,
   CheckCheck,
@@ -21,6 +22,7 @@ type RoomEntry = {
   name: string;
   host_key: string;
   created_at: string;
+  start_at: string | null;
 };
 
 type RoomStats = {
@@ -57,6 +59,39 @@ function saveAdminKey(value: string) {
   }
 }
 
+function toDateTimeLocalValue(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const localTime = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localTime.toISOString().slice(0, 16);
+}
+
+function dateTimeLocalToIso(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function getDefaultStartAtInput(): string {
+  const defaultDate = new Date(Date.now() + 5 * 60_000);
+  defaultDate.setSeconds(0, 0);
+  return toDateTimeLocalValue(defaultDate.toISOString());
+}
+
+function formatRoomStartAt(value: string | null): string {
+  if (!value) return "No start time set";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Invalid start time";
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 async function adminFetch(path: string, adminKey: string, options?: RequestInit) {
   const resp = await fetch(path, {
     ...options,
@@ -78,12 +113,16 @@ export function AdminPage() {
 
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomHostKey, setNewRoomHostKey] = useState("");
+  const [newRoomStartAt, setNewRoomStartAt] = useState(() => getDefaultStartAtInput());
   const [creating, setCreating] = useState(false);
 
   const [expandedRoom, setExpandedRoom] = useState<string | null>(null);
   const [showQr, setShowQr] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [showHostKeys, setShowHostKeys] = useState<Record<string, boolean>>({});
+  const [roomStartAtDrafts, setRoomStartAtDrafts] = useState<Record<string, string>>({});
+  const [updatingRoomStartAt, setUpdatingRoomStartAt] = useState<Record<string, boolean>>({});
+  const [recentlyUpdatedRoomStartAt, setRecentlyUpdatedRoomStartAt] = useState<string | null>(null);
 
   const fetchRooms = useCallback(async () => {
     setLoading(true);
@@ -145,6 +184,16 @@ export function AdminPage() {
     return () => clearInterval(interval);
   }, [authenticated, rooms, fetchStats]);
 
+  useEffect(() => {
+    const nextDrafts: Record<string, string> = {};
+    for (const room of rooms) {
+      const fromStartAt = room.start_at ? toDateTimeLocalValue(room.start_at) : "";
+      const fromCreatedAt = room.created_at ? toDateTimeLocalValue(room.created_at) : "";
+      nextDrafts[room.name] = fromStartAt || fromCreatedAt || getDefaultStartAtInput();
+    }
+    setRoomStartAtDrafts(nextDrafts);
+  }, [rooms]);
+
   function handleLogin(e: FormEvent) {
     e.preventDefault();
     saveAdminKey(adminKey.trim());
@@ -154,13 +203,22 @@ export function AdminPage() {
   async function handleCreateRoom(e: FormEvent) {
     e.preventDefault();
     if (!newRoomName.trim() || !newRoomHostKey.trim()) return;
+    const startAtIso = dateTimeLocalToIso(newRoomStartAt);
+    if (!startAtIso) {
+      setError("Please enter a valid room start time.");
+      return;
+    }
     setCreating(true);
     setError(null);
     try {
       const resp = await adminFetch("/api/admin/rooms", adminKey, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: newRoomName.trim(), hostKey: newRoomHostKey.trim() }),
+        body: JSON.stringify({
+          name: newRoomName.trim(),
+          hostKey: newRoomHostKey.trim(),
+          startAt: startAtIso,
+        }),
       });
       if (!resp.ok) {
         const data = (await resp.json()) as { error?: string };
@@ -168,6 +226,7 @@ export function AdminPage() {
       }
       setNewRoomName("");
       setNewRoomHostKey("");
+      setNewRoomStartAt(getDefaultStartAtInput());
       await fetchRooms();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create room");
@@ -204,6 +263,42 @@ export function AdminPage() {
       }
     } catch {
       setError("Failed to reset room");
+    }
+  }
+
+  async function handleUpdateRoomStartAt(room: RoomEntry) {
+    const nextStartAtInput = roomStartAtDrafts[room.name] ?? "";
+    const startAtIso = dateTimeLocalToIso(nextStartAtInput);
+    if (!startAtIso) {
+      setError(`Please enter a valid open time for "${room.name}".`);
+      return;
+    }
+
+    setError(null);
+    setUpdatingRoomStartAt((prev) => ({ ...prev, [room.name]: true }));
+    try {
+      const resp = await adminFetch("/api/admin/rooms", adminKey, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: room.name,
+          hostKey: room.host_key,
+          startAt: startAtIso,
+        }),
+      });
+      if (!resp.ok) {
+        const data = (await resp.json()) as { error?: string };
+        throw new Error(data.error ?? "Failed to update room open time");
+      }
+      await fetchRooms();
+      setRecentlyUpdatedRoomStartAt(room.name);
+      window.setTimeout(() => {
+        setRecentlyUpdatedRoomStartAt((current) => (current === room.name ? null : current));
+      }, 1400);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update room open time");
+    } finally {
+      setUpdatingRoomStartAt((prev) => ({ ...prev, [room.name]: false }));
     }
   }
 
@@ -299,15 +394,31 @@ export function AdminPage() {
                 placeholder="Secret host key for this room"
               />
             </label>
+            <label className="admin-field-label">
+              Start Time
+              <input
+                className="text-input"
+                type="datetime-local"
+                value={newRoomStartAt}
+                onChange={(e) => setNewRoomStartAt(e.currentTarget.value)}
+              />
+            </label>
           </div>
-          <button type="submit" disabled={creating || !newRoomName.trim() || !newRoomHostKey.trim()}>
+          <button
+            type="submit"
+            disabled={
+              creating || !newRoomName.trim() || !newRoomHostKey.trim() || !newRoomStartAt.trim()
+            }
+          >
             {creating ? "Creating..." : "Create Room"}
           </button>
         </form>
       </section>
 
       <section className="admin-rooms-section">
-        <h3>Rooms ({rooms.length})</h3>
+        <h3>
+          Rooms (<FlowInteger value={rooms.length} />)
+        </h3>
         {rooms.length === 0 ? (
           <p className="muted">No rooms yet. Create one above.</p>
         ) : (
@@ -318,6 +429,8 @@ export function AdminPage() {
               const isExpanded = expandedRoom === room.name;
               const isQrVisible = showQr === room.name;
               const isHostKeyVisible = showHostKeys[room.name] ?? false;
+              const isUpdatingStartAt = updatingRoomStartAt[room.name] ?? false;
+              const startAtDraft = roomStartAtDrafts[room.name] ?? "";
               const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(urls.audience)}`;
 
               return (
@@ -326,7 +439,8 @@ export function AdminPage() {
                     <div className="admin-room-name-row">
                       <h4>{room.name}</h4>
                       <span className="admin-room-created">
-                        {new Date(room.created_at).toLocaleDateString()}
+                        Created {new Date(room.created_at).toLocaleDateString()} · Opens{" "}
+                        {formatRoomStartAt(room.start_at)}
                       </span>
                     </div>
 
@@ -335,13 +449,18 @@ export function AdminPage() {
                         <>
                           <span className="admin-stat-chip" title="Participants">
                             <Users size={12} strokeWidth={2} />
-                            <strong>{stats.participants}</strong>
+                            <strong>
+                              <FlowInteger value={stats.participants} />
+                            </strong>
                           </span>
                           <span className="admin-stat-chip" title="Questions">
-                            Q{stats.currentQuestionIndex + 1}/{stats.totalQuestions}
+                            Q<FlowInteger value={stats.currentQuestionIndex + 1} />/
+                            <FlowInteger value={stats.totalQuestions} />
                           </span>
                           <span className="admin-stat-chip" title="Connections">
-                            A:{stats.audienceCount} H:{stats.hostCount} P:{stats.projectorCount}
+                            A:<FlowInteger value={stats.audienceCount} /> H:
+                            <FlowInteger value={stats.hostCount} /> P:
+                            <FlowInteger value={stats.projectorCount} />
                           </span>
                         </>
                       ) : (
@@ -366,6 +485,34 @@ export function AdminPage() {
                         title={isHostKeyVisible ? "Hide" : "Show"}
                       >
                         {isHostKeyVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+
+                    <div className="admin-room-open-time-row">
+                      <span className="admin-field-label-inline">Open Time:</span>
+                      <input
+                        className="text-input admin-room-open-time-input"
+                        type="datetime-local"
+                        value={startAtDraft}
+                        onChange={(event) => {
+                          const nextValue = event.currentTarget.value;
+                          setRoomStartAtDrafts((prev) => ({
+                            ...prev,
+                            [room.name]: nextValue,
+                          }));
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="admin-action-btn admin-action-save-time"
+                        onClick={() => handleUpdateRoomStartAt(room)}
+                        disabled={isUpdatingStartAt || !startAtDraft.trim()}
+                      >
+                        {isUpdatingStartAt
+                          ? "Saving..."
+                          : recentlyUpdatedRoomStartAt === room.name
+                            ? "Saved"
+                            : "Save Time"}
                       </button>
                     </div>
 
@@ -461,7 +608,9 @@ export function AdminPage() {
                             <span className={`admin-question-phase phase-${q.phase}`}>
                               {q.phase}
                             </span>
-                            <span className="admin-question-votes">{q.totalVotes} votes</span>
+                            <span className="admin-question-votes">
+                              <FlowInteger value={q.totalVotes} /> votes
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -477,9 +626,17 @@ export function AdminPage() {
       <footer className="app-bottom-bar">
         <span className="app-bottom-left">SynHole Admin</span>
         <div className="app-bottom-right">
-          <span>{rooms.length} room{rooms.length !== 1 ? "s" : ""}</span>
+          <span>
+            <FlowInteger value={rooms.length} /> room{rooms.length !== 1 ? "s" : ""}
+          </span>
         </div>
       </footer>
     </main>
+  );
+}
+
+function FlowInteger(props: { value: number }) {
+  return (
+    <NumberFlow value={props.value} trend={0} format={{ useGrouping: false, maximumFractionDigits: 0 }} />
   );
 }
