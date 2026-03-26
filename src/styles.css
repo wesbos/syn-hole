@@ -473,6 +473,20 @@ select:focus {
   .app-shell * {
     cursor: none !important;
   }
+
+  .name-overlay,
+  .name-overlay * {
+    cursor: auto !important;
+  }
+
+  .name-overlay input,
+  .name-overlay textarea {
+    cursor: text !important;
+  }
+
+  .name-overlay button {
+    cursor: pointer !important;
+  }
 }
 
 button {

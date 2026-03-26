@@ -18,7 +18,8 @@ export class AdminRegistry extends DurableObject<Env> {
         name TEXT PRIMARY KEY,
         host_key TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        start_at TEXT
+        start_at TEXT,
+        cursors_enabled INTEGER NOT NULL DEFAULT 1
       )
     `);
     const columns = this.ctx.storage.sql.exec("PRAGMA table_info(rooms)").toArray() as Array<{
@@ -27,7 +28,15 @@ export class AdminRegistry extends DurableObject<Env> {
     if (!columns.some((column) => column.name === "start_at")) {
       this.ctx.storage.sql.exec("ALTER TABLE rooms ADD COLUMN start_at TEXT");
     }
+    if (!columns.some((column) => column.name === "cursors_enabled")) {
+      this.ctx.storage.sql.exec(
+        "ALTER TABLE rooms ADD COLUMN cursors_enabled INTEGER NOT NULL DEFAULT 1"
+      );
+    }
     this.ctx.storage.sql.exec("UPDATE rooms SET start_at = created_at WHERE start_at IS NULL");
+    this.ctx.storage.sql.exec(
+      "UPDATE rooms SET cursors_enabled = 1 WHERE cursors_enabled IS NULL"
+    );
     this.schemaInitialized = true;
   }
 
@@ -38,22 +47,33 @@ export class AdminRegistry extends DurableObject<Env> {
 
     if (path === "/rooms" && request.method === "GET") {
       const rows = this.ctx.storage.sql
-        .exec("SELECT name, host_key, created_at, start_at FROM rooms ORDER BY created_at DESC")
+        .exec(
+          "SELECT name, host_key, created_at, start_at, cursors_enabled FROM rooms ORDER BY created_at DESC"
+        )
         .toArray();
       return Response.json(rows);
     }
 
     if (path === "/rooms" && request.method === "POST") {
-      const body = (await request.json()) as { name?: string; hostKey?: string; startAt?: string };
+      const body = (await request.json()) as {
+        name?: string;
+        hostKey?: string;
+        startAt?: string;
+        cursorsEnabled?: boolean;
+      };
       const rawName = (body.name ?? "").trim();
       const hostKey = (body.hostKey ?? "").trim();
       const rawStartAt = typeof body.startAt === "string" ? body.startAt : "";
+      const rawCursorsEnabled = body.cursorsEnabled;
       const normalizedStartAt = normalizeStartAt(rawStartAt);
       if (!rawName || !hostKey) {
         return Response.json({ error: "name and hostKey are required" }, { status: 400 });
       }
       if (rawStartAt.trim().length > 0 && normalizedStartAt === null) {
         return Response.json({ error: "Invalid startAt value" }, { status: 400 });
+      }
+      if (rawCursorsEnabled !== undefined && typeof rawCursorsEnabled !== "boolean") {
+        return Response.json({ error: "Invalid cursorsEnabled value" }, { status: 400 });
       }
       const name = rawName
         .toLowerCase()
@@ -63,23 +83,32 @@ export class AdminRegistry extends DurableObject<Env> {
       if (!name) {
         return Response.json({ error: "Invalid room name" }, { status: 400 });
       }
+
+      const existingRows = this.ctx.storage.sql
+        .exec("SELECT cursors_enabled FROM rooms WHERE name = ? LIMIT 1", name)
+        .toArray() as Array<{ cursors_enabled: number }>;
+      const existingCursorsEnabled = existingRows[0]?.cursors_enabled === 0 ? 0 : 1;
       const startAt = normalizedStartAt ?? new Date().toISOString();
+      const cursorsEnabled =
+        rawCursorsEnabled === undefined ? existingCursorsEnabled : rawCursorsEnabled ? 1 : 0;
       this.ctx.storage.sql.exec(
-        "INSERT INTO rooms (name, host_key, start_at) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET host_key = excluded.host_key, start_at = excluded.start_at",
+        "INSERT INTO rooms (name, host_key, start_at, cursors_enabled) VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET host_key = excluded.host_key, start_at = excluded.start_at, cursors_enabled = excluded.cursors_enabled",
         name,
         hostKey,
-        startAt
+        startAt,
+        cursorsEnabled
       );
       return Response.json({ ok: true, name });
     }
 
-    const roomMatch = path.match(/^\/rooms\/([^/]+)(\/host-key|\/start-time)?$/);
+    const roomMatch = path.match(/^\/rooms\/([^/]+)(\/host-key|\/start-time|\/cursors)?$/);
     if (!roomMatch) return new Response("Not Found", { status: 404 });
 
     const roomName = decodeURIComponent(roomMatch[1]);
     const routeSuffix = roomMatch[2] ?? "";
     const isHostKeyRequest = routeSuffix === "/host-key";
     const isStartTimeRequest = routeSuffix === "/start-time";
+    const isCursorsRequest = routeSuffix === "/cursors";
 
     if (isHostKeyRequest && request.method === "GET") {
       const rows = this.ctx.storage.sql
@@ -97,7 +126,15 @@ export class AdminRegistry extends DurableObject<Env> {
       return Response.json({ found: true, startAt: rows[0].start_at });
     }
 
-    if (!isHostKeyRequest && !isStartTimeRequest && request.method === "DELETE") {
+    if (isCursorsRequest && request.method === "GET") {
+      const rows = this.ctx.storage.sql
+        .exec("SELECT cursors_enabled FROM rooms WHERE name = ? LIMIT 1", roomName)
+        .toArray() as Array<{ cursors_enabled: number }>;
+      if (rows.length === 0) return Response.json({ found: false });
+      return Response.json({ found: true, cursorsEnabled: rows[0].cursors_enabled !== 0 });
+    }
+
+    if (!isHostKeyRequest && !isStartTimeRequest && !isCursorsRequest && request.method === "DELETE") {
       this.ctx.storage.sql.exec("DELETE FROM rooms WHERE name = ?", roomName);
       return Response.json({ ok: true });
     }

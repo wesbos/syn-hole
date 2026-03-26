@@ -51,6 +51,16 @@ async function lookupRoomStartAt(env: Env, roomName: string): Promise<string | n
   return typeof data.startAt === "string" && data.startAt.length > 0 ? data.startAt : null;
 }
 
+async function lookupRoomCursorsEnabled(env: Env, roomName: string): Promise<boolean> {
+  const stub = getRegistryStub(env);
+  const resp = await stub.fetch(
+    new Request(`http://internal/rooms/${encodeURIComponent(roomName)}/cursors`)
+  );
+  const data = (await resp.json()) as { found: boolean; cursorsEnabled?: boolean };
+  if (!data.found) return true;
+  return data.cursorsEnabled !== false;
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -80,6 +90,16 @@ export default {
       const startAt = await lookupRoomStartAt(env, roomName);
       return Response.json(
         { room: roomName, startAt },
+        { headers: { "cache-control": "no-store" } }
+      );
+    }
+
+    const roomCursorsMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/cursors$/);
+    if (roomCursorsMatch && request.method === "GET") {
+      const roomName = decodeURIComponent(roomCursorsMatch[1]);
+      const cursorsEnabled = await lookupRoomCursorsEnabled(env, roomName);
+      return Response.json(
+        { room: roomName, cursorsEnabled },
         { headers: { "cache-control": "no-store" } }
       );
     }

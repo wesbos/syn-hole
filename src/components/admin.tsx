@@ -23,6 +23,7 @@ type RoomEntry = {
   host_key: string;
   created_at: string;
   start_at: string | null;
+  cursors_enabled?: number | boolean | null;
 };
 
 type RoomStats = {
@@ -92,6 +93,10 @@ function formatRoomStartAt(value: string | null): string {
   });
 }
 
+function roomCursorsEnabled(room: RoomEntry): boolean {
+  return room.cursors_enabled !== false && room.cursors_enabled !== 0;
+}
+
 async function adminFetch(path: string, adminKey: string, options?: RequestInit) {
   const resp = await fetch(path, {
     ...options,
@@ -114,6 +119,7 @@ export function AdminPage() {
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomHostKey, setNewRoomHostKey] = useState("");
   const [newRoomStartAt, setNewRoomStartAt] = useState(() => getDefaultStartAtInput());
+  const [newRoomCursorsEnabled, setNewRoomCursorsEnabled] = useState(true);
   const [creating, setCreating] = useState(false);
 
   const [expandedRoom, setExpandedRoom] = useState<string | null>(null);
@@ -121,8 +127,13 @@ export function AdminPage() {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [showHostKeys, setShowHostKeys] = useState<Record<string, boolean>>({});
   const [roomStartAtDrafts, setRoomStartAtDrafts] = useState<Record<string, string>>({});
+  const [roomCursorsEnabledDrafts, setRoomCursorsEnabledDrafts] = useState<Record<string, boolean>>(
+    {}
+  );
   const [updatingRoomStartAt, setUpdatingRoomStartAt] = useState<Record<string, boolean>>({});
+  const [updatingRoomCursors, setUpdatingRoomCursors] = useState<Record<string, boolean>>({});
   const [recentlyUpdatedRoomStartAt, setRecentlyUpdatedRoomStartAt] = useState<string | null>(null);
+  const [recentlyUpdatedRoomCursors, setRecentlyUpdatedRoomCursors] = useState<string | null>(null);
 
   const fetchRooms = useCallback(async () => {
     setLoading(true);
@@ -186,12 +197,15 @@ export function AdminPage() {
 
   useEffect(() => {
     const nextDrafts: Record<string, string> = {};
+    const nextCursorsDrafts: Record<string, boolean> = {};
     for (const room of rooms) {
       const fromStartAt = room.start_at ? toDateTimeLocalValue(room.start_at) : "";
       const fromCreatedAt = room.created_at ? toDateTimeLocalValue(room.created_at) : "";
       nextDrafts[room.name] = fromStartAt || fromCreatedAt || getDefaultStartAtInput();
+      nextCursorsDrafts[room.name] = roomCursorsEnabled(room);
     }
     setRoomStartAtDrafts(nextDrafts);
+    setRoomCursorsEnabledDrafts(nextCursorsDrafts);
   }, [rooms]);
 
   function handleLogin(e: FormEvent) {
@@ -218,6 +232,7 @@ export function AdminPage() {
           name: newRoomName.trim(),
           hostKey: newRoomHostKey.trim(),
           startAt: startAtIso,
+          cursorsEnabled: newRoomCursorsEnabled,
         }),
       });
       if (!resp.ok) {
@@ -227,6 +242,7 @@ export function AdminPage() {
       setNewRoomName("");
       setNewRoomHostKey("");
       setNewRoomStartAt(getDefaultStartAtInput());
+      setNewRoomCursorsEnabled(true);
       await fetchRooms();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create room");
@@ -284,6 +300,7 @@ export function AdminPage() {
           name: room.name,
           hostKey: room.host_key,
           startAt: startAtIso,
+          cursorsEnabled: roomCursorsEnabledDrafts[room.name] ?? roomCursorsEnabled(room),
         }),
       });
       if (!resp.ok) {
@@ -299,6 +316,39 @@ export function AdminPage() {
       setError(err instanceof Error ? err.message : "Failed to update room open time");
     } finally {
       setUpdatingRoomStartAt((prev) => ({ ...prev, [room.name]: false }));
+    }
+  }
+
+  async function handleUpdateRoomCursorsEnabled(room: RoomEntry) {
+    const nextCursorsEnabled = roomCursorsEnabledDrafts[room.name] ?? roomCursorsEnabled(room);
+    const fallbackStartAt = room.start_at ?? room.created_at;
+
+    setError(null);
+    setUpdatingRoomCursors((prev) => ({ ...prev, [room.name]: true }));
+    try {
+      const resp = await adminFetch("/api/admin/rooms", adminKey, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: room.name,
+          hostKey: room.host_key,
+          startAt: fallbackStartAt,
+          cursorsEnabled: nextCursorsEnabled,
+        }),
+      });
+      if (!resp.ok) {
+        const data = (await resp.json()) as { error?: string };
+        throw new Error(data.error ?? "Failed to update room cursor setting");
+      }
+      await fetchRooms();
+      setRecentlyUpdatedRoomCursors(room.name);
+      window.setTimeout(() => {
+        setRecentlyUpdatedRoomCursors((current) => (current === room.name ? null : current));
+      }, 1400);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update room cursor setting");
+    } finally {
+      setUpdatingRoomCursors((prev) => ({ ...prev, [room.name]: false }));
     }
   }
 
@@ -403,6 +453,14 @@ export function AdminPage() {
                 onChange={(e) => setNewRoomStartAt(e.currentTarget.value)}
               />
             </label>
+            <label className="admin-field-label admin-checkbox-label">
+              <span>Realtime Cursors</span>
+              <input
+                type="checkbox"
+                checked={newRoomCursorsEnabled}
+                onChange={(event) => setNewRoomCursorsEnabled(event.currentTarget.checked)}
+              />
+            </label>
           </div>
           <button
             type="submit"
@@ -430,7 +488,10 @@ export function AdminPage() {
               const isQrVisible = showQr === room.name;
               const isHostKeyVisible = showHostKeys[room.name] ?? false;
               const isUpdatingStartAt = updatingRoomStartAt[room.name] ?? false;
+              const isUpdatingCursors = updatingRoomCursors[room.name] ?? false;
               const startAtDraft = roomStartAtDrafts[room.name] ?? "";
+              const cursorsEnabledDraft =
+                roomCursorsEnabledDrafts[room.name] ?? roomCursorsEnabled(room);
               const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(urls.audience)}`;
 
               return (
@@ -513,6 +574,36 @@ export function AdminPage() {
                           : recentlyUpdatedRoomStartAt === room.name
                             ? "Saved"
                             : "Save Time"}
+                      </button>
+                    </div>
+
+                    <div className="admin-room-open-time-row">
+                      <span className="admin-field-label-inline">Realtime Cursors:</span>
+                      <label className="admin-room-toggle">
+                        <input
+                          type="checkbox"
+                          checked={cursorsEnabledDraft}
+                          onChange={(event) => {
+                            const nextChecked = event.currentTarget.checked;
+                            setRoomCursorsEnabledDrafts((prev) => ({
+                              ...prev,
+                              [room.name]: nextChecked,
+                            }));
+                          }}
+                        />
+                        <span>{cursorsEnabledDraft ? "Enabled" : "Disabled"}</span>
+                      </label>
+                      <button
+                        type="button"
+                        className="admin-action-btn admin-action-save-time"
+                        onClick={() => handleUpdateRoomCursorsEnabled(room)}
+                        disabled={isUpdatingCursors}
+                      >
+                        {isUpdatingCursors
+                          ? "Saving..."
+                          : recentlyUpdatedRoomCursors === room.name
+                            ? "Saved"
+                            : "Save Cursors"}
                       </button>
                     </div>
 

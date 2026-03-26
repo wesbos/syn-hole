@@ -81,6 +81,7 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
   >(null);
   const [pointers, setPointers] = useState<RealtimePointer[]>([]);
   const [pointerColor] = useState(() => generatePointerColor());
+  const [cursorsEnabled, setCursorsEnabled] = useState(true);
   const [roomStartAtMs, setRoomStartAtMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -113,6 +114,7 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
     onOpen(event) {
       setStatus("connected");
       setErrorMessage(null);
+      if (!readCursorsEnabledFromUrl()) return;
       const socketTarget =
         event?.target instanceof WebSocket ? event.target : null;
       if (!socketTarget || socketTarget.readyState !== WebSocket.OPEN) return;
@@ -139,6 +141,10 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
           return;
         }
         if (message.type === "pointers") {
+          if (!cursorsEnabled) {
+            setPointers([]);
+            return;
+          }
           const pointerMessage = message as PointerMessage;
           setPointers(pointerMessage.pointers);
           return;
@@ -153,6 +159,23 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
       }
     },
   });
+
+  useEffect(() => {
+    setCursorsEnabled(readCursorsEnabledFromUrl());
+  }, []);
+
+  useEffect(() => {
+    if (cursorsEnabled) return;
+    setPointers([]);
+    if (socket.readyState !== WebSocket.OPEN) return;
+    const clearPointerMessage: IncomingMessage = {
+      type: "cursor",
+      x: null,
+      y: null,
+      color: pointerColor,
+    };
+    socket.send(JSON.stringify(clearPointerMessage));
+  }, [cursorsEnabled, pointerColor, socket]);
 
   useEffect(() => {
     if (role !== "audience" || !stateMessage) {
@@ -265,7 +288,7 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
   }, [showStartingSoon, roomStartAtMs]);
 
   useEffect(() => {
-    if (!canConnect || typeof window === "undefined") return;
+    if (!canConnect || !cursorsEnabled || typeof window === "undefined") return;
 
     const sendPointer = (x: number | null, y: number | null) => {
       if (socket.readyState !== WebSocket.OPEN) return;
@@ -336,7 +359,7 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       clearPointer();
     };
-  }, [canConnect, pointerColor, socket]);
+  }, [canConnect, cursorsEnabled, pointerColor, socket]);
 
   function sendMessage(message: IncomingMessage) {
     if (socket.readyState !== WebSocket.OPEN) {
@@ -1660,6 +1683,26 @@ function parseRoomStartTimeMs(value: unknown): number | null {
   if (typeof value !== "string" || value.trim().length === 0) return null;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function readCursorsEnabledFromUrl(): boolean {
+  if (typeof window === "undefined") return true;
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get("cursors") ?? params.get("cursor");
+  const parsed = parseUrlBoolean(raw);
+  return parsed ?? true;
+}
+
+function parseUrlBoolean(value: string | null): boolean | null {
+  if (value === null) return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "on" || normalized === "yes") {
+    return true;
+  }
+  if (normalized === "0" || normalized === "false" || normalized === "off" || normalized === "no") {
+    return false;
+  }
+  return null;
 }
 
 function clampUnit(value: number): number {
