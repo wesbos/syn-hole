@@ -1,24 +1,43 @@
 import type { PollQuestion } from "../types";
 
 export const mainQuestions = [
+  // {
+  //   kind: "choice",
+  //   id: "nori",
+  //   prompt: "Nori",
+  //   allowMultiple: false,
+  //   hideResultsUntilReveal: false,
+  //   options: [
+  //     {
+  //       id: "health-advisor",
+  //       label: "an AI powered personal health advisor",
+  //     },
+  //     {
+  //       id: "cli-skills",
+  //       label: "a CLI tool for installing Claude Code Skillsets",
+  //     },
+  //     { id: "both", label: "both" },
+  //   ],
+  //   correctOptionIds: ["both"],
+  // },
   {
     kind: "choice",
-    id: "nori",
-    prompt: "Nori",
+    id: "kagan",
+    prompt: "Kagan",
     allowMultiple: false,
     hideResultsUntilReveal: false,
     options: [
       {
-        id: "health-advisor",
-        label: "an AI powered personal health advisor",
+        id: "kanban-ai-agents",
+        label: "A Kanban board that runs AI agents.",
       },
       {
-        id: "cli-skills",
-        label: "a CLI tool for installing Claude Code Skillsets",
+        id: "c-and-c-villain",
+        label: "A villain in the 1995 RTS game Command & Conquer",
       },
       { id: "both", label: "both" },
     ],
-    correctOptionIds: ["both"],
+    correctOptionIds: ["kanban-ai-agents"],
   },
   {
     kind: "choice",
@@ -41,6 +60,25 @@ export const mainQuestions = [
   },
   {
     kind: "choice",
+    id: "kosuke",
+    prompt: "Kosuke",
+    allowMultiple: false,
+    hideResultsUntilReveal: false,
+    options: [
+      {
+        id: "steakhouse-sushi",
+        label: "Japanese Steakhouse and Sushi in Arkansas",
+      },
+      {
+        id: "vibe-coding-tool",
+        label: "A collaborative vibe coding tool",
+      },
+      { id: "both", label: "both" },
+    ],
+    correctOptionIds: ["both"],
+  },
+  {
+    kind: "choice",
     id: "synesthesia",
     prompt: "Synesthesia",
     allowMultiple: false,
@@ -57,6 +95,60 @@ export const mainQuestions = [
       { id: "both", label: "both" },
     ],
     correctOptionIds: ["both"],
+  },
+  {
+    kind: "choice",
+    id: "niimbot",
+    prompt: "Niimbot",
+    allowMultiple: false,
+    hideResultsUntilReveal: false,
+    options: [
+      {
+        id: "openclaw-fork",
+        label: "An Openclaw Fork written in Nim",
+      },
+      {
+        id: "portable-label-printer",
+        label: "A portable label printer",
+      },
+      { id: "both", label: "both" },
+    ],
+    correctOptionIds: ["portable-label-printer"],
+  },
+  {
+    kind: "choice",
+    id: "aspero",
+    prompt: "Aspero",
+    allowMultiple: false,
+    hideResultsUntilReveal: false,
+    options: [
+      { id: "gravel-bike", label: "A Gravel Bike, built for speed" },
+      {
+        id: "scraping-service",
+        label: "A Cloud based web scraping service, built for speed",
+      },
+      { id: "both", label: "both" },
+    ],
+    correctOptionIds: ["gravel-bike"],
+  },
+  {
+    kind: "choice",
+    id: "kenny-powers",
+    prompt: "Kenny Powers",
+    allowMultiple: false,
+    hideResultsUntilReveal: false,
+    options: [
+      {
+        id: "fictional-baseball-player",
+        label: "A fictional world famous baseball player",
+      },
+      {
+        id: "chaos-testing-loop",
+        label: "An AI loop that tests your code's robustness by adding chaos.",
+      },
+      { id: "both", label: "both" },
+    ],
+    correctOptionIds: ["fictional-baseball-player"],
   },
   {
     kind: "choice",
@@ -77,22 +169,6 @@ export const mainQuestions = [
     ],
     correctOptionIds: ["trance-dj"],
   },
-  {
-    kind: "choice",
-    id: "aspero",
-    prompt: "Aspero",
-    allowMultiple: false,
-    hideResultsUntilReveal: false,
-    options: [
-      { id: "gravel-bike", label: "A Gravel Bike, built for speed" },
-      {
-        id: "scraping-service",
-        label: "A Cloud based web scraping service, built for speed",
-      },
-      { id: "both", label: "both" },
-    ],
-    correctOptionIds: ["gravel-bike"],
-  },
 ] satisfies PollQuestion[];
 
 export const sillyTestQuestions = [
@@ -107,6 +183,7 @@ export const sillyTestQuestions = [
       { id: "tacos", label: "Tacos" },
       { id: "pizza", label: "Pizza" },
       { id: "all-of-the-above", label: "Whatever is nearest to the keyboard" },
+      { id: "both", label: "both" },
     ],
     correctOptionIds: ["ramen"],
   },
@@ -121,6 +198,7 @@ export const sillyTestQuestions = [
       { id: "gummy-bears", label: "Gummy bears" },
       { id: "trail-mix", label: "Trail mix pretending to be healthy" },
       { id: "none", label: "Just vibes and caffeine" },
+      { id: "both", label: "both" },
     ],
     correctOptionIds: ["chips"],
   },
@@ -135,6 +213,7 @@ export const sillyTestQuestions = [
       { id: "python", label: "Python" },
       { id: "rust", label: "Rust" },
       { id: "html", label: "HTML (do not start this debate)" },
+      { id: "both", label: "both" },
     ],
     correctOptionIds: ["typescript"],
   },
@@ -149,6 +228,7 @@ export const sillyTestQuestions = [
       { id: "light", label: "Light mode on purpose" },
       { id: "solarized", label: "Solarized for nostalgia" },
       { id: "random", label: "Theme roulette every day" },
+      { id: "both", label: "both" },
     ],
     correctOptionIds: ["dark"],
   },
@@ -163,6 +243,7 @@ export const sillyTestQuestions = [
       { id: "breakpoints", label: "Breakpoint detective mode" },
       { id: "rubber-duck", label: "Explain it to a rubber duck" },
       { id: "restart", label: "Close laptop and reopen it" },
+      { id: "both", label: "both" },
     ],
     correctOptionIds: ["console-log"],
   },
@@ -177,6 +258,7 @@ export const sillyTestQuestions = [
       { id: "tea", label: "Tea" },
       { id: "sparkling-water", label: "Sparkling water in a fancy can" },
       { id: "energy-drink", label: "An extremely neon energy drink" },
+      { id: "both", label: "both" },
     ],
     correctOptionIds: ["coffee"],
   },
@@ -191,6 +273,7 @@ export const sillyTestQuestions = [
       { id: "gui", label: "GUI buttons only" },
       { id: "chat", label: "Ask an AI to run it" },
       { id: "sticky-note", label: "Write commands on sticky notes" },
+      { id: "both", label: "both" },
     ],
     correctOptionIds: ["terminal"],
   },
@@ -205,6 +288,7 @@ export const sillyTestQuestions = [
       { id: "refactor", label: "Refactor something unrelated" },
       { id: "snack-break", label: "Snack break that becomes a walk" },
       { id: "tweak-dotfiles", label: "Tweak dotfiles again" },
+      { id: "both", label: "both" },
     ],
     correctOptionIds: ["tweak-dotfiles"],
   },
@@ -219,6 +303,7 @@ export const sillyTestQuestions = [
       { id: "perfect-types", label: "Generate perfect TypeScript types first try" },
       { id: "read-docs", label: "Read every doc page instantly" },
       { id: "fix-bugs", label: "Fix bug before I even hit save" },
+      { id: "both", label: "both" },
     ],
     correctOptionIds: ["perfect-types"],
   },
@@ -233,9 +318,10 @@ export const sillyTestQuestions = [
       { id: "cli-tool", label: "A CLI tool nobody asked for" },
       { id: "home-automation", label: "Home automation that annoys everyone" },
       { id: "rebuild-blog", label: "Rebuild the blog for the 9th time" },
+      { id: "both", label: "both" },
     ],
     correctOptionIds: ["cli-tool"],
   },
 ] satisfies PollQuestion[];
 
-export default sillyTestQuestions;
+export default mainQuestions;
