@@ -7,6 +7,7 @@ import type {
   PollPhase,
   PollQuestion,
   PollQuestionPublic,
+  RealtimePointer,
   PollRole,
   VoteCounts,
 } from "./types";
@@ -25,6 +26,8 @@ export class PollRoom extends Server<Env> {
   private currentQuestionIndex = 0;
   private readonly phaseByQuestionIndex = new Map<number, PollPhase>();
   private readonly votesByQuestionIndex = new Map<number, Map<string, string[]>>();
+  private readonly pointersByConnectionId = new Map<string, RealtimePointer>();
+  private readonly pointerEnabledConnectionIds = new Set<string>();
   private stateLoaded = false;
   private loadStatePromise: Promise<void> | null = null;
 
@@ -116,6 +119,11 @@ export class PollRoom extends Server<Env> {
       return;
     }
 
+    if (incoming.type === "cursor") {
+      this.handleCursorUpdate(conn, incoming);
+      return;
+    }
+
     if (isHostMessage(incoming) && conn.state?.role !== "host") {
       this.sendError(conn, "Only host connections may send this command.");
       return;
@@ -135,11 +143,14 @@ export class PollRoom extends Server<Env> {
   }
 
   onClose(
-    _conn: Connection<PollConnectionState>,
+    conn: Connection<PollConnectionState>,
     _code: number,
     _reason: string,
     _wasClean: boolean
   ): void {
+    this.pointerEnabledConnectionIds.delete(conn.id);
+    const removed = this.pointersByConnectionId.delete(conn.id);
+    if (removed) this.broadcastPointers();
     this.broadcastState();
   }
 
@@ -231,7 +242,7 @@ export class PollRoom extends Server<Env> {
   }
 
   private async handleHostCommand(
-    message: Exclude<IncomingMessage, { type: "vote" | "vote-number" }>
+    message: Exclude<IncomingMessage, { type: "vote" | "vote-number" | "cursor" }>
   ) {
     switch (message.type) {
       case "set-question": {
@@ -282,6 +293,31 @@ export class PollRoom extends Server<Env> {
     }
   }
 
+  private handleCursorUpdate(
+    conn: Connection<PollConnectionState>,
+    message: Extract<IncomingMessage, { type: "cursor" }>
+  ) {
+    if (!this.pointerEnabledConnectionIds.has(conn.id)) {
+      this.pointerEnabledConnectionIds.add(conn.id);
+      this.sendPointers(conn);
+    }
+
+    const x = typeof message.x === "number" ? clamp01(message.x) : null;
+    const y = typeof message.y === "number" ? clamp01(message.y) : null;
+    if (x === null || y === null) {
+      const removed = this.pointersByConnectionId.delete(conn.id);
+      if (removed) this.broadcastPointers();
+      return;
+    }
+    this.pointersByConnectionId.set(conn.id, {
+      id: conn.id,
+      x,
+      y,
+      color: message.color,
+    });
+    this.broadcastPointers();
+  }
+
   private sendError(connection: Connection<unknown>, message: string) {
     try {
       connection.send(JSON.stringify({ type: "error", message } satisfies OutgoingMessage));
@@ -303,6 +339,34 @@ export class PollRoom extends Server<Env> {
     } catch {
       // Connection may already be closed.
     }
+  }
+
+  private sendPointers(connection: Connection<PollConnectionState>) {
+    try {
+      connection.send(JSON.stringify(this.buildPointersMessage()));
+    } catch {
+      // Connection may already be closed.
+    }
+  }
+
+  private broadcastPointers() {
+    const payload = JSON.stringify(this.buildPointersMessage());
+    const connections = Array.from(this.getConnections<PollConnectionState>());
+    for (let index = 0; index < connections.length; index += 1) {
+      if (!this.pointerEnabledConnectionIds.has(connections[index].id)) continue;
+      try {
+        connections[index].send(payload);
+      } catch {
+        // Connection may already be closed.
+      }
+    }
+  }
+
+  private buildPointersMessage(): Extract<OutgoingMessage, { type: "pointers" }> {
+    return {
+      type: "pointers",
+      pointers: Array.from(this.pointersByConnectionId.values()),
+    };
   }
 
   private buildState(connection: Connection<PollConnectionState>): OutgoingMessage {
@@ -790,10 +854,20 @@ function sanitizeAudienceName(name: string | null): string | null {
   return cleaned.length > 0 ? cleaned : null;
 }
 
+function clamp01(value: number): number {
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function isPointerColor(value: string): boolean {
+  return /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
 function isHostMessage(
   message: IncomingMessage
-): message is Exclude<IncomingMessage, { type: "vote" | "vote-number" }> {
-  return message.type !== "vote" && message.type !== "vote-number";
+): message is Exclude<IncomingMessage, { type: "vote" | "vote-number" | "cursor" }> {
+  return message.type !== "vote" && message.type !== "vote-number" && message.type !== "cursor";
 }
 
 function parseIncomingMessage(rawMessage: string): IncomingMessage | null {
@@ -821,6 +895,22 @@ function parseIncomingMessage(rawMessage: string): IncomingMessage | null {
       if (message.value !== null && typeof message.value !== "number") return null;
       if (typeof message.value === "number" && !Number.isFinite(message.value)) return null;
       return { type: "vote-number", value: message.value as number | null };
+    case "cursor":
+      if (message.x !== null && (typeof message.x !== "number" || !Number.isFinite(message.x))) {
+        return null;
+      }
+      if (message.y !== null && (typeof message.y !== "number" || !Number.isFinite(message.y))) {
+        return null;
+      }
+      if (typeof message.color !== "string" || !isPointerColor(message.color)) {
+        return null;
+      }
+      return {
+        type: "cursor",
+        x: typeof message.x === "number" ? message.x : null,
+        y: typeof message.y === "number" ? message.y : null,
+        color: message.color,
+      };
     case "set-question":
       if (typeof message.questionIndex !== "number") return null;
       return { type: "set-question", questionIndex: message.questionIndex };

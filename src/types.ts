@@ -34,6 +34,12 @@ export type PollNumberQuestionPublic = Omit<PollNumberQuestion, "correctNumber">
 export type PollQuestionPublic = PollChoiceQuestionPublic | PollNumberQuestionPublic;
 
 export type VoteCounts = Record<string, number>;
+export type RealtimePointer = {
+  id: string;
+  x: number;
+  y: number;
+  color: string;
+};
 
 export type IncomingMessage =
   | {
@@ -43,6 +49,12 @@ export type IncomingMessage =
   | {
       type: "vote-number";
       value: number | null;
+    }
+  | {
+      type: "cursor";
+      x: number | null;
+      y: number | null;
+      color: string;
     }
   | {
       type: "set-question";
@@ -106,4 +118,8 @@ export type OutgoingMessage =
   | {
       type: "error";
       message: string;
+    }
+  | {
+      type: "pointers";
+      pointers: RealtimePointer[];
     };

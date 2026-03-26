@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 import NumberFlow from "@number-flow/react";
 import usePartySocket from "partysocket/react";
 import {
@@ -23,6 +23,7 @@ import type {
   PollNumberQuestion,
   PollNumberQuestionPublic,
   PollRole,
+  RealtimePointer,
 } from "~/types";
 
 type ViewMode = "audience" | "host" | "projector";
@@ -35,6 +36,7 @@ const HOST_KEY_STORAGE_KEY = "syntax-live-host-key";
 const QUESTION_CROSS_SLIDE_MS = 320;
 
 type StateMessage = Extract<OutgoingMessage, { type: "state" }>;
+type PointerMessage = Extract<OutgoingMessage, { type: "pointers" }>;
 
 const phaseLabel: Record<string, string> = {
   idle: "Waiting to open voting",
@@ -77,6 +79,8 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
   const [stateMessage, setStateMessage] = useState<
     Extract<OutgoingMessage, { type: "state" }> | null
   >(null);
+  const [pointers, setPointers] = useState<RealtimePointer[]>([]);
+  const [pointerColor] = useState(() => generatePointerColor());
   const [roomStartAtMs, setRoomStartAtMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -106,12 +110,23 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
       name: role === "audience" ? audienceName : undefined,
       hostKey: role === "host" ? hostKey.trim() : undefined,
     }),
-    onOpen() {
+    onOpen(event) {
       setStatus("connected");
       setErrorMessage(null);
+      const socketTarget =
+        event?.target instanceof WebSocket ? event.target : null;
+      if (!socketTarget || socketTarget.readyState !== WebSocket.OPEN) return;
+      const initialPointerMessage: IncomingMessage = {
+        type: "cursor",
+        x: null,
+        y: null,
+        color: pointerColor,
+      };
+      socketTarget.send(JSON.stringify(initialPointerMessage));
     },
     onClose() {
       setStatus("disconnected");
+      setPointers([]);
     },
     onError() {
       setStatus("disconnected");
@@ -121,6 +136,14 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
         const message = JSON.parse(event.data as string) as OutgoingMessage;
         if (message.type === "error") {
           setErrorMessage(message.message);
+          return;
+        }
+        if (message.type === "pointers") {
+          const pointerMessage = message as PointerMessage;
+          setPointers(pointerMessage.pointers);
+          return;
+        }
+        if (message.type !== "state") {
           return;
         }
         setErrorMessage(null);
@@ -240,6 +263,80 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
       window.clearInterval(intervalId);
     };
   }, [showStartingSoon, roomStartAtMs]);
+
+  useEffect(() => {
+    if (!canConnect || typeof window === "undefined") return;
+
+    const sendPointer = (x: number | null, y: number | null) => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      const message: IncomingMessage = { type: "cursor", x, y, color: pointerColor };
+      socket.send(JSON.stringify(message));
+    };
+
+    let rafId: number | null = null;
+    let pendingPosition: { x: number; y: number } | null = null;
+
+    const flushPendingPosition = () => {
+      rafId = null;
+      if (!pendingPosition) return;
+      sendPointer(pendingPosition.x, pendingPosition.y);
+      pendingPosition = null;
+    };
+
+    const queuePointerPosition = (x: number, y: number) => {
+      pendingPosition = { x, y };
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(flushPendingPosition);
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (window.innerWidth <= 0 || window.innerHeight <= 0) return;
+      queuePointerPosition(
+        clampUnit(event.clientX / window.innerWidth),
+        clampUnit(event.clientY / window.innerHeight)
+      );
+    };
+
+    const handlePointerEnd = (event: PointerEvent) => {
+      if (event.pointerType === "touch" || event.pointerType === "pen") {
+        clearPointer();
+      }
+    };
+
+    const clearPointer = () => {
+      pendingPosition = null;
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      sendPointer(null, null);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        clearPointer();
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    window.addEventListener("pointerdown", handlePointerMove, { passive: true });
+    window.addEventListener("pointerup", handlePointerEnd, { passive: true });
+    window.addEventListener("pointercancel", handlePointerEnd, { passive: true });
+    window.addEventListener("pointerleave", clearPointer);
+    window.addEventListener("blur", clearPointer);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerdown", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerEnd);
+      window.removeEventListener("pointercancel", handlePointerEnd);
+      window.removeEventListener("pointerleave", clearPointer);
+      window.removeEventListener("blur", clearPointer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearPointer();
+    };
+  }, [canConnect, pointerColor, socket]);
 
   function sendMessage(message: IncomingMessage) {
     if (socket.readyState !== WebSocket.OPEN) {
@@ -399,6 +496,8 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
         )
       ) : null}
 
+      <CursorOverlay pointers={pointers} />
+
       <footer className="app-bottom-bar">
         <span className="app-bottom-left">SynHole</span>
         <div className="app-bottom-right">
@@ -413,6 +512,25 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
         </div>
       </footer>
     </main>
+  );
+}
+
+function CursorOverlay(props: { pointers: RealtimePointer[] }) {
+  const visiblePointers = props.pointers.filter((pointer) =>
+    Number.isFinite(pointer.x) && Number.isFinite(pointer.y)
+  );
+
+  return (
+    <div className="cursor-overlay" aria-hidden>
+      {visiblePointers.map((pointer) => {
+        const style: CSSProperties = {
+          left: `${(clampUnit(pointer.x) * 100).toFixed(2)}%`,
+          top: `${(clampUnit(pointer.y) * 100).toFixed(2)}%`,
+          borderTopColor: pointer.color,
+        };
+        return <span key={pointer.id} className="cursor-overlay-pointer" style={style} />;
+      })}
+    </div>
   );
 }
 
@@ -1542,6 +1660,61 @@ function parseRoomStartTimeMs(value: unknown): number | null {
   if (typeof value !== "string" || value.trim().length === 0) return null;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function clampUnit(value: number): number {
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function generatePointerColor(): string {
+  const hue = Math.floor(Math.random() * 360);
+  const saturation = 70 + Math.floor(Math.random() * 20);
+  const lightness = 45 + Math.floor(Math.random() * 15);
+  return hslToHex(hue, saturation, lightness);
+}
+
+function hslToHex(hue: number, saturation: number, lightness: number): string {
+  const s = clampUnit(saturation / 100);
+  const l = clampUnit(lightness / 100);
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const h = ((hue % 360) + 360) % 360;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+
+  let rPrime = 0;
+  let gPrime = 0;
+  let bPrime = 0;
+
+  if (h < 60) {
+    rPrime = c;
+    gPrime = x;
+  } else if (h < 120) {
+    rPrime = x;
+    gPrime = c;
+  } else if (h < 180) {
+    gPrime = c;
+    bPrime = x;
+  } else if (h < 240) {
+    gPrime = x;
+    bPrime = c;
+  } else if (h < 300) {
+    rPrime = x;
+    bPrime = c;
+  } else {
+    rPrime = c;
+    bPrime = x;
+  }
+
+  const r = Math.round((rPrime + m) * 255);
+  const g = Math.round((gPrime + m) * 255);
+  const b = Math.round((bPrime + m) * 255);
+  return `#${toHex2(r)}${toHex2(g)}${toHex2(b)}`;
+}
+
+function toHex2(value: number): string {
+  return value.toString(16).padStart(2, "0");
 }
 
 function useQuestionCrossSlideTransition(stateMessage: StateMessage): {

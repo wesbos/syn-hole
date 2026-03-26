@@ -449,6 +449,32 @@ select:focus {
   }
 }
 
+.cursor-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1200;
+}
+
+.cursor-overlay-pointer {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 14px solid #ffffff;
+  transform: translate(-40%, -62%) rotate(135deg);
+  transform-origin: 50% 20%;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.85));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-shell,
+  .app-shell * {
+    cursor: none !important;
+  }
+}
+
 button {
   border: 1px solid color-mix(in srgb, var(--accent) 52%, var(--text));
   background: var(--accent);
@@ -892,7 +918,11 @@ button:disabled {
   bottom: 0;
   left: 0;
   width: 4px;
-  background: linear-gradient(180deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 45%, var(--surface)) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--accent) 0%,
+    color-mix(in srgb, var(--accent) 45%, var(--surface)) 100%
+  );
 }
 
 .starting-soon-kicker {
