@@ -951,7 +951,7 @@ button:disabled {
 
 .projector-bar-fill {
   height: 100%;
-  background: color-mix(in srgb, var(--surface) 88%, var(--text));
+  background: var(--accent);
   display: flex;
   align-items: center;
   min-width: 44px;
@@ -1010,7 +1010,6 @@ button:disabled {
   line-height: 1;
   letter-spacing: -0.03em;
   font-weight: 800;
-  text-transform: uppercase;
   overflow-wrap: anywhere;
   word-break: break-word;
 }

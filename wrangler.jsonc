@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "syn-hole",
+  "account_id": "3ebe60b8bb090efeda7702aff60769bb",
   "main": "src/server.ts",
   "compatibility_date": "2026-03-17",
   "compatibility_flags": ["nodejs_compat"],
