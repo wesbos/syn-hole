@@ -358,6 +358,7 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
             room={room}
             roomStartAtMs={roomStartAtMs}
             msUntilRoomStart={msUntilRoomStart}
+            view={view}
           />
         ) : (
           <AudienceView
@@ -391,6 +392,7 @@ export function PollPage(props: { view: ViewMode; room?: string }) {
             room={room}
             roomStartAtMs={roomStartAtMs}
             msUntilRoomStart={msUntilRoomStart}
+            view={view}
           />
         ) : (
           <ProjectorView stateMessage={stateMessage} audienceUrl={roomLinks.audience} />
@@ -620,8 +622,9 @@ function StartingSoonView(props: {
   room: string;
   roomStartAtMs: number | null;
   msUntilRoomStart: number | null;
+  view: "audience" | "projector";
 }) {
-  const { stateMessage, audienceUrl, room, roomStartAtMs, msUntilRoomStart } = props;
+  const { stateMessage, audienceUrl, room, roomStartAtMs, msUntilRoomStart, view } = props;
   const { qrUrl, shortLink } = getAudienceQrDetails(audienceUrl);
   const rootDomain = getRootDomain(audienceUrl);
   const showCountdown =
@@ -641,14 +644,20 @@ function StartingSoonView(props: {
               "STARTING SOON"
             )}
           </h2>
-          <p className="starting-soon-info-line">
-            <span>Go to</span>
-            <strong>{rootDomain}</strong>
-          </p>
-          <p className="starting-soon-info-line">
-            <span>Enter code</span>
-            <strong>{room}</strong>
-          </p>
+          {view === "audience" ? (
+            <p className="starting-soon-note">Sit Tight!</p>
+          ) : (
+            <>
+              <p className="starting-soon-info-line">
+                <span>Go to</span>
+                <strong>{rootDomain}</strong>
+              </p>
+              <p className="starting-soon-info-line">
+                <span>Enter code</span>
+                <strong>{room}</strong>
+              </p>
+            </>
+          )}
           <div className="starting-soon-users">
             <small>Users currently in this room</small>
             <strong>

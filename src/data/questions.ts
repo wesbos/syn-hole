@@ -238,4 +238,4 @@ export const sillyTestQuestions = [
   },
 ] satisfies PollQuestion[];
 
-export default mainQuestions;
+export default sillyTestQuestions;
